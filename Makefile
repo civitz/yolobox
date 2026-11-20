@@ -56,6 +56,12 @@ smoke-test: build
 		echo "  ✗ claude"; \
 		failed=1; \
 	fi; \
+	if ./$(BINARY) run $(SMOKE_ARGS) --scratch bash scripts/claude-clipboard-probe.sh >/dev/null 2>&1; then \
+		echo "  ✓ claude clipboard contract"; \
+	else \
+		echo "  ✗ claude clipboard contract (run scripts/claude-clipboard-probe.sh in a box for details)"; \
+		failed=1; \
+	fi; \
 	if ./$(BINARY) run $(SMOKE_ARGS) --scratch codex --version >/dev/null 2>&1; then \
 		echo "  ✓ codex"; \
 	else \

@@ -1,0 +1,388 @@
+#!/bin/bash
+# yolobox-clipboard: the clipboard commands inside a yolobox, backed by the
+# host bridge that `yolobox run --clipboard` starts.
+#
+# Installed as xclip, xsel, wl-copy, wl-paste, pbcopy, pbpaste, and a narrow
+# powershell.exe (see run_powershell). The box
+# has no display server, so these are the only clipboard the tools inside can
+# see. Each name accepts the flags its real counterpart does, including MIME
+# types, so callers such as Claude Code can list types and paste images:
+#
+#   xclip -selection clipboard -t TARGETS -o      list available types
+#   xclip -selection clipboard -t image/png -o    paste an image
+#   wl-paste --type image/png                     paste an image
+#   xclip -selection clipboard -t image/png -i F  copy an image file
+#
+# Exit status: 0 success; 1 the clipboard has no data of the requested type
+# (so `a || b` fallbacks work); 2 the bridge is unavailable or failed.
+#
+# YOLOBOX_CLIPBOARD_DEBUG=1 logs every invocation's argv to stderr.
+
+set -uo pipefail
+
+cmd="$(basename "$0")"
+endpoint="${YOLOBOX_CLIPBOARD_ENDPOINT:-}"
+token="${YOLOBOX_CLIPBOARD_TOKEN:-}"
+
+debug() {
+    if [ "${YOLOBOX_CLIPBOARD_DEBUG:-}" = "1" ]; then
+        printf 'yolobox-clipboard[%s]: %s\n' "$cmd" "$*" >&2
+    fi
+}
+
+fail() {
+    printf '%s: %s\n' "$cmd" "$1" >&2
+    exit "${2:-2}"
+}
+
+debug "argv: $*"
+
+if [ -z "$endpoint" ] || [ -z "$token" ]; then
+    fail "yolobox clipboard bridge is not enabled; start the box with --clipboard"
+fi
+
+tmpfiles=()
+cleanup() { [ "${#tmpfiles[@]}" -gt 0 ] && rm -f "${tmpfiles[@]}"; return 0; }
+trap cleanup EXIT
+
+# mktmp prints a new temp file path.
+mktmp() {
+    mktemp "${TMPDIR:-/tmp}/yolobox-clipboard.XXXXXX" || fail "cannot create a temp file"
+}
+
+# newtmp VAR creates a temp file and stores its path in VAR. It registers the
+# file for the EXIT trap, so call it in the main shell, never inside $(...):
+# a command substitution is a subshell, whose additions to tmpfiles are lost.
+newtmp() {
+    local f
+    f="$(mktmp)" || exit 2
+    tmpfiles+=("$f")
+    printf -v "$1" "%s" "$f"
+}
+
+# request METHOD PATH TYPE [curl args...] writes the response body to stdout.
+# TYPE is sent as ?type= when non-empty.
+request() {
+    local method="$1" path="$2" type="$3"
+    shift 3
+    # request may run inside $(...), where the EXIT trap does not apply, so it
+    # removes its own response file on every path.
+    local body status msg
+    body="$(mktmp)" || exit 2
+    tmpfiles+=("$body")
+    local args=(-sS -X "$method" -o "$body" -w '%{http_code}'
+        -H "X-Yolobox-Clipboard-Token: $token")
+    if [ -n "$type" ]; then
+        args+=(--url-query "type=$type")
+    fi
+    if ! status="$(curl "${args[@]}" "$@" "$endpoint$path")"; then
+        rm -f "$body"
+        fail "yolobox clipboard bridge unreachable at $endpoint; was the box started with --clipboard?"
+    fi
+    case "$status" in
+        2??)
+            cat "$body"
+            rm -f "$body"
+            ;;
+        404)
+            rm -f "$body"
+            debug "$path type=${type:-text}: not available"
+            fail "the host clipboard has no ${type:-text} data" 1
+            ;;
+        415)
+            rm -f "$body"
+            debug "$path type=${type:-text}: unsupported"
+            fail "the host clipboard cannot provide ${type:-text}" 1
+            ;;
+        401)
+            rm -f "$body"
+            fail "yolobox clipboard bridge rejected the token"
+            ;;
+        *)
+            msg="$(head -c 300 "$body")"
+            rm -f "$body"
+            fail "yolobox clipboard bridge error ($status): $msg"
+            ;;
+    esac
+}
+
+# is_text_type reports whether a requested type means plain text.
+is_text_type() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')" in
+        "" | text/plain | text/plain\;charset=utf-8 | utf8_string | string | text) return 0 ;;
+    esac
+    return 1
+}
+
+# clip_paste TYPE NEWLINE EMPTY_FAILS: NEWLINE=1 appends a newline to text
+# that lacks one; EMPTY_FAILS=1 exits 1 on an empty clipboard, like wl-paste.
+clip_paste() {
+    local type="$1" newline="${2:-0}" empty_fails="${3:-0}"
+    if is_text_type "$type"; then
+        local out
+        out="$(request GET /paste "" && printf x)" || exit $?
+        out="${out%x}"
+        if [ -z "$out" ] && [ "$empty_fails" = "1" ]; then
+            fail "Nothing is copied" 1
+        fi
+        printf '%s' "$out"
+        if [ "$newline" = "1" ] && [ -n "$out" ] && [ "${out: -1}" != $'\n' ]; then
+            printf '\n'
+        fi
+    else
+        request GET /paste "$type"
+    fi
+}
+
+# list_targets STYLE: "x11" adds the X11 atoms xclip reports.
+list_targets() {
+    local targets
+    targets="$(request GET /targets "")" || exit $?
+    if [ "$1" = "x11" ]; then
+        printf 'TARGETS\n'
+    fi
+    printf '%s\n' "$targets"
+    if [ "$1" = "x11" ] && printf '%s\n' "$targets" | grep -qx 'text/plain'; then
+        printf 'UTF8_STRING\nSTRING\n'
+    fi
+}
+
+# strip_last_newline FILE removes one trailing newline in place.
+strip_last_newline() {
+    if [ -s "$1" ] && [ "$(tail -c 1 "$1" | od -An -c | tr -d ' ')" = '\n' ]; then
+        truncate -s -1 "$1"
+    fi
+}
+
+# clip_copy TYPE FILE sends FILE to the host clipboard.
+clip_copy() {
+    local type="$1" file="$2"
+    if is_text_type "$type"; then
+        type=""
+    fi
+    request POST /copy "$type" --data-binary "@$file" >/dev/null
+}
+
+# sniff_type FILE prints image/png for PNG data, as wl-copy infers types.
+sniff_type() {
+    if [ "$(head -c 8 "$1" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ]; then
+        printf 'image/png'
+    fi
+}
+
+run_xclip() {
+    local mode=copy type="" filter=0 rmlastnl=0 files=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -o | -ou*) mode=paste ;;
+            -i | -in*) mode=copy ;;
+            -t | -ta*) shift; type="${1:-}" ;;
+            -sen*) ;;
+            -se*) shift ;;
+            -d | -di*) shift ;;
+            -l | -lo*) shift ;;
+            -f | -fi*) filter=1 ;;
+            -r | -rm*) rmlastnl=1 ;;
+            -n | -no*) ;;
+            -si* | -q* | -verb*) ;;
+            -h | -help | -vers* | -version)
+                printf 'xclip (yolobox clipboard bridge)\n'
+                exit 0
+                ;;
+            -*) debug "ignoring $1" ;;
+            *) files+=("$1") ;;
+        esac
+        shift
+    done
+
+    if [ "$mode" = "paste" ]; then
+        if [ "$type" = "TARGETS" ]; then
+            list_targets x11
+        else
+            clip_paste "$type"
+        fi
+        return
+    fi
+
+    local data
+    newtmp data
+    if [ "${#files[@]}" -gt 0 ]; then
+        cat -- "${files[@]}" >"$data" || exit 2
+    else
+        cat >"$data"
+    fi
+    if [ "$rmlastnl" = "1" ] && is_text_type "$type"; then
+        strip_last_newline "$data"
+    fi
+    clip_copy "$type" "$data"
+    if [ "$filter" = "1" ]; then
+        cat "$data"
+    fi
+}
+
+run_xsel() {
+    local mode="" clear=0
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -o | --output) mode=paste ;;
+            -i | --input | -a | --append) mode=copy ;;
+            -c | --clear | -d | --delete) clear=1 ;;
+            -l | --logfile | -t | --selectionTimeout | --display) shift ;;
+            -h | --help | --version)
+                printf 'xsel (yolobox clipboard bridge)\n'
+                exit 0
+                ;;
+            *) debug "ignoring $1" ;;
+        esac
+        shift
+    done
+
+    local data
+    newtmp data
+    if [ "$clear" = "1" ]; then
+        clip_copy "" "$data"
+        return
+    fi
+    if [ -z "$mode" ]; then
+        # Like xsel: read stdin when it is not a terminal, else print.
+        if [ -t 0 ]; then mode=paste; else mode=copy; fi
+    fi
+    if [ "$mode" = "paste" ]; then
+        clip_paste ""
+    else
+        cat >"$data"
+        clip_copy "" "$data"
+    fi
+}
+
+run_wl_paste() {
+    local type="" list=0 newline=1
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -l | --list-types) list=1 ;;
+            -t | --type) shift; type="${1:-}" ;;
+            --type=*) type="${1#--type=}" ;;
+            -n | --no-newline) newline=0 ;;
+            -p | --primary) ;;
+            -s | --seat) shift ;;
+            --seat=*) ;;
+            -w | --watch) fail "--watch is not supported by the yolobox clipboard bridge" ;;
+            -h | --help | -v | --version)
+                printf 'wl-paste (yolobox clipboard bridge)\n'
+                exit 0
+                ;;
+            *) debug "ignoring $1" ;;
+        esac
+        shift
+    done
+
+    # Like wl-paste, a bare "image" means the best image type available.
+    if [ "$type" = "image" ]; then
+        type=image/png
+    fi
+    if [ "$list" = "1" ]; then
+        list_targets plain
+    elif is_text_type "$type"; then
+        clip_paste "" "$newline" 1
+    else
+        clip_paste "$type"
+    fi
+}
+
+run_wl_copy() {
+    local type="" trim=0 clear=0 words=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -t | --type) shift; type="${1:-}" ;;
+            --type=*) type="${1#--type=}" ;;
+            -n | --trim-newline) trim=1 ;;
+            -c | --clear) clear=1 ;;
+            -p | --primary | -f | --foreground | -o | --paste-once | --regular) ;;
+            -s | --seat) shift ;;
+            --seat=*) ;;
+            -h | --help | -v | --version)
+                printf 'wl-copy (yolobox clipboard bridge)\n'
+                exit 0
+                ;;
+            --)
+                shift
+                words+=("$@")
+                break
+                ;;
+            -*) debug "ignoring $1" ;;
+            *) words+=("$1") ;;
+        esac
+        shift
+    done
+
+    local data
+    newtmp data
+    if [ "$clear" = "1" ]; then
+        clip_copy "" "$data"
+        return
+    fi
+    if [ "${#words[@]}" -gt 0 ]; then
+        # Like wl-copy: copy the arguments, joined by spaces, instead of stdin.
+        printf '%s' "${words[*]}" >"$data"
+    else
+        cat >"$data"
+    fi
+    if [ -z "$type" ]; then
+        type="$(sniff_type "$data")"
+    fi
+    if [ "$trim" = "1" ] && is_text_type "$type"; then
+        strip_last_newline "$data"
+    fi
+    clip_copy "$type" "$data"
+}
+
+run_pbcopy() {
+    local data
+    newtmp data
+    cat >"$data"
+    clip_copy "" "$data"
+}
+
+# run_powershell answers Claude Code's one PowerShell clipboard read. On a WSL2
+# kernel Claude believes it runs in WSL, and its mouse-mode right-click paste
+# runs `powershell.exe -NoProfile -NonInteractive -Command "... Get-Clipboard
+# -Raw"`. Everything else exits 1, so callers that probe powershell.exe for
+# other work, such as Claude's image fallbacks, see it fail and move on.
+run_powershell() {
+    local script=""
+    while [ "$#" -gt 0 ]; do
+        case "$(printf "%s" "$1" | tr "[:upper:]" "[:lower:]")" in
+            -command | -c)
+                shift
+                script="$*"
+                break
+                ;;
+        esac
+        shift
+    done
+    case "$script" in
+        *Get-Clipboard*)
+            local out
+            out="$(request GET /paste "" && printf x)" || exit $?
+            out="${out%x}"
+            # PowerShell ends its output with a newline, which callers strip.
+            if [ -n "$out" ]; then
+                printf "%s\n" "$out"
+            fi
+            ;;
+        *)
+            fail "only Get-Clipboard is available through the yolobox clipboard bridge" 1
+            ;;
+    esac
+}
+
+case "$cmd" in
+    xclip) run_xclip "$@" ;;
+    xsel) run_xsel "$@" ;;
+    wl-paste) run_wl_paste "$@" ;;
+    wl-copy) run_wl_copy "$@" ;;
+    pbcopy) run_pbcopy ;;
+    pbpaste) clip_paste "" ;;
+    powershell.exe) run_powershell "$@" ;;
+    *) fail "unsupported clipboard command: $cmd" ;;
+esac

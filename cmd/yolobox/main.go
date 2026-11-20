@@ -353,7 +353,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  --copy-agent-instructions  Copy global agent instructions and skills")
 	fmt.Fprintln(os.Stderr, "  --no-project          Skip automatic project mount (caller provides mounts)")
 	fmt.Fprintln(os.Stderr, "  --docker              Mount Docker socket and join shared network")
-	fmt.Fprintln(os.Stderr, "  --clipboard           Bridge text clipboard copy/paste to the host")
+	fmt.Fprintln(os.Stderr, "  --clipboard           Bridge clipboard copy/paste (text; images on Windows) to the host")
 	fmt.Fprintln(os.Stderr, "  --open-bridge         Bridge open/xdg-open URLs to the host")
 	fmt.Fprintln(os.Stderr, "  --cpus <count>        Limit number of CPUs (supports fractions)")
 	fmt.Fprintln(os.Stderr, "  --memory <size>       Cap memory usage (e.g., 4g, 512m)")
@@ -504,7 +504,7 @@ func newBaseFlagSet(name string) (*flag.FlagSet, func(*Config) error) {
 	fs.BoolVar(&copyAgentInstructions, "copy-agent-instructions", false, "copy agent instruction files and skills")
 	fs.BoolVar(&noProject, "no-project", false, "skip automatic project mount (caller provides mounts and workdir)")
 	fs.BoolVar(&docker, "docker", false, "mount Docker socket and join shared network")
-	fs.BoolVar(&clipboard, "clipboard", false, "bridge text clipboard copy/paste to the host")
+	fs.BoolVar(&clipboard, "clipboard", false, "bridge clipboard copy/paste (text; images on Windows) to the host")
 	fs.BoolVar(&openBridge, "open-bridge", false, "bridge open/xdg-open URLs to the host")
 	fs.BoolVar(&setup, "setup", false, "run interactive setup before starting")
 	fs.Var(&mounts, "mount", "extra mount src:dst")
@@ -1162,7 +1162,7 @@ func runSetup() (Config, error) {
 					huh.NewOption("RTK compression (supported AI CLIs)", "rtk"),
 					huh.NewOption("SSH agent (Docker Desktop/Colima on macOS; not Podman machine)", "ssh_agent"),
 					huh.NewOption("Docker socket (run containers from sandbox)", "docker"),
-					huh.NewOption("Host clipboard (text copy/paste bridge; requires network)", "clipboard"),
+					huh.NewOption("Host clipboard (copy/paste bridge: text, and images on Windows; requires network)", "clipboard"),
 					huh.NewOption("Host open bridge (open URLs in host browser; requires network)", "open_bridge"),
 					huh.NewOption("No automatic project mount (advanced; provide mounts/workdir)", "no_project"),
 					huh.NewOption("No network (disables network, pod, Docker, clipboard, and open bridge)", "no_network"),
@@ -1530,6 +1530,11 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 			"-e", "YOLOBOX_CLIPBOARD_ENDPOINT="+cfg.ClipboardEndpoint,
 			"-e", "YOLOBOX_CLIPBOARD_TOKEN="+cfg.ClipboardToken,
 		)
+		// Apple's container runtime cannot mount single files; it keeps the
+		// image's shim.
+		if !appleContainer {
+			args = append(args, clipboardShimMountArgs()...)
+		}
 		args = append(args, hostBridgeRuntimeArgs(cfg.Runtime)...)
 		hostBridgeRuntimeArgsAdded = true
 	}

@@ -65,7 +65,7 @@ How it fits together:
 - Windows paths given to `--mount`, `--copy-as` and `--customize-file` are translated the same way.
 - Config comes from your Windows profile (`%USERPROFILE%\.config\yolobox\config.toml`, `%USERPROFILE%\.claude`, `%USERPROFILE%\.gitconfig`, and so on).
 - API keys such as `ANTHROPIC_API_KEY` and any `YOLOBOX_*` settings set in Windows are forwarded.
-- `--clipboard` uses the Windows clipboard (text) and `--open-bridge` opens URLs in your Windows browser.
+- `--clipboard` uses the Windows clipboard, including images, and `--open-bridge` opens URLs in your Windows browser.
 - `yolobox upgrade` reruns the installer. `yolobox uninstall --force` removes yolobox's config and volumes, then the installation. To remove only the installation, run `install.ps1 -Uninstall`.
 
 Optional environment variables for the wrapper:

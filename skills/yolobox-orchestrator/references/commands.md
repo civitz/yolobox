@@ -184,7 +184,7 @@ Join an existing Docker network:
 yolobox run --network my-compose_default sh -lc 'getent hosts db'
 ```
 
-Bridge text clipboard copy/paste to the host:
+Bridge clipboard copy/paste to the host (text everywhere, images on Windows):
 
 ```bash
 yolobox codex --clipboard

@@ -11,10 +11,15 @@ there is no `v0.6.0` tag in this repository.
 ### Added
 
 - Windows support through a Podman machine, with no compiled Windows program: `windows/install.ps1` installs the Linux yolobox and a PowerShell wrapper (`yolobox.ps1`) that runs it inside the machine's WSL distro, so it also works under Smart App Control. The wrapper translates drive paths (`D:\x` → `/mnt/d/x`, including `--mount`, `--copy-as` and `--customize-file`), reads config from the Windows profile, forwards API keys, and routes `yolobox upgrade` and `yolobox uninstall --force` through the installer.
+- Clipboard images. The container clipboard shims understand MIME types (`xclip -t TARGETS -o`, `xclip -t image/png -o`, `wl-paste --type image/png`, copying images with `-t image/png -i FILE`), and the bridge has typed endpoints. On Windows, the host side serves screenshots, images copied in apps, and a copied image file (as its own type, or converted to PNG), so Claude Code's Alt+V image paste works in the box. macOS and Linux hosts stay text-only for now.
 - `YOLOBOX_HOST_HOME` points host config lookups (agent config sync, `.gitconfig`, global config, `~` in user paths) at another home without changing `HOME`. The Windows wrapper uses it for the Windows profile.
 - With `--open-bridge`, a yolobox running inside WSL opens URLs in the Windows default browser.
-- A yolobox running inside WSL serves the Windows clipboard (text) through `powershell.exe`, including Claude Code's right-click paste.
 - The Windows wrapper switches `[Console]::OutputEncoding` and `$OutputEncoding` to UTF-8 around `wsl.exe` (restoring them afterwards), so `yolobox run ... > out.txt` no longer turns UTF-8 output into mojibake under the OEM code page.
+- `scripts/claude-clipboard-probe.sh`, run by `make smoke-test`, fails when a Claude Code update changes the clipboard behaviour yolobox relies on.
+
+### Changed
+
+- `--clipboard` mounts yolobox's own copy of the clipboard shims into the box, so they always match the bridge, even with an older image. The shims also answer to `powershell.exe` for Claude Code's right-click paste on Windows, and exit 1 when the clipboard has no data of the requested type, so fallback chains continue.
 
 ## v0.19.13 - 2026-10-31
 

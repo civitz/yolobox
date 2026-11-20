@@ -168,70 +168,15 @@ RUN echo '#!/bin/bash' > /opt/yolobox/wrapper-template \
     && echo 'if [ -z "$REAL_BIN" ]; then echo "Error: $CMD not found" >&2; exit 1; fi' >> /opt/yolobox/wrapper-template \
     && echo 'if [ "$NO_YOLO" = "1" ]; then exec "$REAL_BIN" "$@"; fi' >> /opt/yolobox/wrapper-template
 
-# Clipboard command shims used by --clipboard. These cover the command names
-# used by common terminal clipboard libraries on Linux and macOS.
-RUN printf '%s\n' \
-    '#!/bin/bash' \
-    'set -euo pipefail' \
-    'endpoint="${YOLOBOX_CLIPBOARD_ENDPOINT:-}"' \
-    'token="${YOLOBOX_CLIPBOARD_TOKEN:-}"' \
-    'if [ -z "$endpoint" ] || [ -z "$token" ]; then' \
-    '    echo "yolobox clipboard bridge is not enabled; start with --clipboard" >&2' \
-    '    exit 1' \
-    'fi' \
-    'copy_to_host() {' \
-    '    curl -fsS -X POST -H "X-Yolobox-Clipboard-Token: $token" --data-binary @- "$endpoint/copy" >/dev/null' \
-    '}' \
-    'paste_from_host() {' \
-    '    curl -fsS -H "X-Yolobox-Clipboard-Token: $token" "$endpoint/paste"' \
-    '}' \
-    'cmd="$(basename "$0")"' \
-    'case "$cmd" in' \
-    '    pbcopy|wl-copy)' \
-    '        copy_to_host' \
-    '        ;;' \
-    '    pbpaste|wl-paste)' \
-    '        paste_from_host' \
-    '        ;;' \
-    '    xclip)' \
-    '        for arg in "$@"; do' \
-    '            case "$arg" in -o|-out) paste_from_host; exit $? ;; esac' \
-    '        done' \
-    '        copy_to_host' \
-    '        ;;' \
-    '    xsel)' \
-    '        for arg in "$@"; do' \
-    '            case "$arg" in -o|--output) paste_from_host; exit $? ;; esac' \
-    '        done' \
-    '        copy_to_host' \
-    '        ;;' \
-    '    powershell.exe)' \
-    '        case "$*" in' \
-    '            *Get-Clipboard*)' \
-    '                text="$(paste_from_host; printf x)"' \
-    '                text="${text%x}"' \
-    '                if [ -n "$text" ]; then printf "%s\n" "$text"; fi' \
-    '                ;;' \
-    '            *)' \
-    '                echo "only Get-Clipboard is available through the yolobox clipboard bridge" >&2' \
-    '                exit 1' \
-    '                ;;' \
-    '        esac' \
-    '        ;;' \
-    '    *)' \
-    '        echo "unsupported yolobox clipboard command: $cmd" >&2' \
-    '        exit 1' \
-    '        ;;' \
-    'esac' \
-    > /opt/yolobox/bin/yolobox-clipboard \
-    && chmod +x /opt/yolobox/bin/yolobox-clipboard \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/pbcopy \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/pbpaste \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/wl-copy \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/wl-paste \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/xclip \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/xsel \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/powershell.exe
+# Clipboard command shims used by --clipboard. One script answers to the
+# command names terminal tools use on Linux and macOS, including MIME-typed
+# requests such as `xclip -t TARGETS -o` and `wl-paste --type image/png`, and
+# talks to the host bridge. Its behaviour is tested by clipboard_shim_test.go.
+COPY cmd/yolobox/assets/yolobox-clipboard /opt/yolobox/bin/yolobox-clipboard
+RUN chmod 755 /opt/yolobox/bin/yolobox-clipboard \
+    && for name in pbcopy pbpaste wl-copy wl-paste xclip xsel powershell.exe; do \
+        ln -s yolobox-clipboard /opt/yolobox/bin/$name; \
+    done
 
 # URL open shims used by --open-bridge. These intentionally accept only a
 # single URL argument; the host bridge validates that it is http or https.

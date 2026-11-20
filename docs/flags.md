@@ -64,7 +64,7 @@ These target different layers:
 | `--gh-token` | Forward GitHub token for `gh` and HTTPS Git auth from `gh auth token` | |
 | `--rtk` | Enable RTK command-output compression for supported AI CLIs | |
 | `--copy-agent-instructions` | Copy global instruction files and skills into the container | |
-| `--clipboard` | Bridge text clipboard copy/paste between the container and host | `--no-network` |
+| `--clipboard` | Bridge clipboard copy/paste between the container and host: text everywhere, images on Windows | `--no-network` |
 | `--open-bridge` | Bridge `open`/`xdg-open` HTTP(S) URLs to the host browser | `--no-network` |
 
 ## Networking and behavior
@@ -187,12 +187,28 @@ The network name is available inside the container as `$YOLOBOX_NETWORK`.
 
 ## Host clipboard
 
-The `--clipboard` flag starts a short-lived host proxy and exposes text clipboard command shims inside the container: `pbcopy`, `pbpaste`, `xclip`, `xsel`, `wl-copy`, and `wl-paste`.
+The `--clipboard` flag starts a short-lived host proxy and exposes clipboard command shims inside the container: `pbcopy`, `pbpaste`, `xclip`, `xsel`, `wl-copy`, and `wl-paste`. They accept the flags of the real tools, including MIME types, so tools can list what the clipboard holds and paste or copy images:
 
-This makes text copy/paste operations from tools such as Codex and Claude Code reach the host clipboard.
+```bash
+xclip -selection clipboard -t TARGETS -o              # list available types
+xclip -selection clipboard -t image/png -o > shot.png # paste an image
+wl-paste --type image/png > shot.png                  # same, Wayland style
+xclip -selection clipboard -t image/png -i shot.png   # copy an image to the host
+```
+
+What the host side supports:
+
+| Host | Text | Images |
+|---|---|---|
+| Windows ([PowerShell wrapper](/getting-started#windows)) | yes | yes: screenshots, images copied in apps, and a single copied image file in Explorer (served as its own type, or converted to PNG on request) |
+| macOS, Linux | yes | not yet: image requests fail cleanly, so tools fall back |
+
+With Claude Code on Windows, press **Alt+V** to paste a screenshot or a copied image file; Windows Terminal keeps Ctrl+V for its own text paste. Claude's `/copy` reaches the Windows clipboard through the terminal (OSC 52) rather than the bridge, and right-click paste in Claude's mouse mode goes through a narrow `powershell.exe` shim that only answers Claude's clipboard read.
+
+yolobox mounts its own copy of the shims into the box, so they always match the bridge, even with an older image. Set `YOLOBOX_CLIPBOARD_DEBUG=1` inside the box to log each shim invocation.
 
 ::: warning
-`--clipboard` cannot be combined with `--no-network`, and it intentionally creates a host-write channel from inside the container.
+`--clipboard` cannot be combined with `--no-network`. It intentionally lets processes in the box read and write the host clipboard, including screenshots and other images on it.
 :::
 
 ## Host URL open bridge

@@ -3828,6 +3828,9 @@ func TestValidateNoClaudeAuthRequiresClaudeConfig(t *testing.T) {
 }
 
 func TestBuildRunArgsClipboard(t *testing.T) {
+	// --clipboard stages the embedded shim under ~/.yolobox; keep it out of
+	// the real home directory.
+	t.Setenv("HOME", t.TempDir())
 	cfg := Config{
 		Image:             "test-image",
 		Clipboard:         true,

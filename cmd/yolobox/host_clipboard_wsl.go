@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,9 +25,52 @@ import (
 const (
 	defaultWindowsPowerShell = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 	defaultWindowsRundll32   = "/mnt/c/Windows/System32/rundll32.exe"
+
+	// wslImageCacheTTL covers Claude Code's paste sequence: it lists targets
+	// and then asks for image/png within milliseconds. Serving the second
+	// request from the first call's result halves the paste latency, since
+	// each powershell.exe start costs about half a second.
+	wslImageCacheTTL = 3 * time.Second
 )
 
 const psPrelude = `$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; `
+
+// psTargetsScript reports what the clipboard holds:
+//
+//	bitmap <base64 PNG>          an image (a screenshot, an image copied in an app)
+//	file <base64 UTF-8 path>     exactly one copied file
+//	none                         anything else
+//
+// A copied file is reported by path only. Decoding a large photo and pushing
+// a re-encoded PNG through the interop pipe took over 10 s; yolobox reads the
+// file itself instead (see host_clipboard_wsl_files.go).
+const psTargetsScript = psPrelude + `
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+if ([Windows.Forms.Clipboard]::ContainsImage()) {
+    $ms = New-Object IO.MemoryStream
+    [Windows.Forms.Clipboard]::GetImage().Save($ms, [Drawing.Imaging.ImageFormat]::Png)
+    'bitmap'
+    [Convert]::ToBase64String($ms.ToArray())
+    exit 0
+}
+if ([Windows.Forms.Clipboard]::ContainsFileDropList()) {
+    $files = [Windows.Forms.Clipboard]::GetFileDropList()
+    if ($files.Count -eq 1) {
+        'file'
+        [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($files[0]))
+        exit 0
+    }
+}
+'none'
+`
+
+// psReadFileScript prints the base64 contents of the file whose UTF-8 path
+// arrives base64-encoded on stdin. It is the fallback for paths WSL cannot
+// see, such as network shares.
+const psReadFileScript = psPrelude + `
+$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd().Trim()))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+`
 
 const psReadTextScript = psPrelude + `
 $text = Get-Clipboard -Raw
@@ -41,6 +85,13 @@ if ($text.Length -eq 0) {
 } else {
     Set-Clipboard -Value $text
 }
+`
+
+const psWriteImageScript = psPrelude + `
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$bytes = [Convert]::FromBase64String([Console]::In.ReadToEnd().Trim())
+$img = [Drawing.Image]::FromStream((New-Object IO.MemoryStream(, $bytes)))
+[Windows.Forms.Clipboard]::SetImage($img)
 `
 
 // wslInteropAvailable reports whether this process can start Windows
@@ -95,10 +146,38 @@ func useWSLHost() bool {
 
 type wslClipboard struct {
 	powershell string
+	now        func() time.Time
+
+	// probeMu serializes probes, so concurrent requests share one
+	// powershell.exe run instead of racing to overwrite the cache.
+	probeMu sync.Mutex
+
+	// The last probe result, reused for wslImageCacheTTL. Errors are cached
+	// too: Claude Code tries xclip, then wl-paste, so an uncached timeout
+	// would cost the full timeout twice.
+	mu       sync.Mutex
+	cachedAt time.Time
+	cached   *wslSnapshot // nil when the clipboard has no image
+	cacheErr error
+
+	// toLinuxPath maps a Windows path to a WSL path; nil means wslpath.
+	toLinuxPath func(ctx context.Context, windowsPath string) (string, error)
+}
+
+// wslSnapshot is the image content of the Windows clipboard: either a
+// bitmap, already encoded as PNG, or a single copied image file.
+type wslSnapshot struct {
+	png  []byte
+	file *wslImageFile
+}
+
+type wslImageFile struct {
+	windowsPath string
+	mime        string // from the file extension
 }
 
 func newWSLClipboard() *wslClipboard {
-	return &wslClipboard{powershell: findWindowsPowerShell()}
+	return &wslClipboard{powershell: findWindowsPowerShell(), now: time.Now}
 }
 
 // run executes a PowerShell script with optional stdin and returns stdout.
@@ -118,7 +197,7 @@ func (c *wslClipboard) run(ctx context.Context, script string, stdin []byte) ([]
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("powershell.exe did not finish: %w", ctx.Err())
+			return nil, fmt.Errorf("%w: powershell.exe did not finish: %v", errClipboardTimeout, ctx.Err())
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 300 {
@@ -127,6 +206,76 @@ func (c *wslClipboard) run(ctx context.Context, script string, stdin []byte) ([]
 		return nil, fmt.Errorf("powershell.exe: %v: %s", err, msg)
 	}
 	return out, nil
+}
+
+// snapshot returns the clipboard's image content (nil when there is none),
+// reusing a probe result younger than wslImageCacheTTL, failures included.
+func (c *wslClipboard) snapshot(ctx context.Context) (*wslSnapshot, error) {
+	c.probeMu.Lock()
+	defer c.probeMu.Unlock()
+
+	c.mu.Lock()
+	if !c.cachedAt.IsZero() && c.now().Sub(c.cachedAt) < wslImageCacheTTL {
+		snap, err := c.cached, c.cacheErr
+		c.mu.Unlock()
+		return snap, err
+	}
+	c.mu.Unlock()
+
+	snap, err := c.probe(ctx)
+	c.mu.Lock()
+	c.cached, c.cacheErr, c.cachedAt = snap, err, c.now()
+	c.mu.Unlock()
+	return snap, err
+}
+
+// invalidate drops the cached probe after the clipboard changes.
+func (c *wslClipboard) invalidate() {
+	c.mu.Lock()
+	c.cached, c.cacheErr, c.cachedAt = nil, nil, time.Time{}
+	c.mu.Unlock()
+}
+
+// probe runs the targets script on Windows.
+func (c *wslClipboard) probe(ctx context.Context) (*wslSnapshot, error) {
+	out, err := c.run(ctx, psTargetsScript, nil)
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return nil, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(fields[1])
+	if err != nil {
+		return nil, fmt.Errorf("powershell.exe returned invalid %s data: %w", fields[0], err)
+	}
+	switch fields[0] {
+	case "bitmap":
+		return &wslSnapshot{png: data}, nil
+	case "file":
+		path := string(data)
+		if mime := imageMIMEForPath(path); mime != "" {
+			return &wslSnapshot{file: &wslImageFile{windowsPath: path, mime: mime}}, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *wslClipboard) Targets(ctx context.Context) ([]string, error) {
+	snap, err := c.snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case snap == nil:
+		return []string{"text/plain"}, nil
+	case snap.file != nil && snap.file.mime != "image/png":
+		// The file's own type first; PNG is converted on request.
+		return []string{snap.file.mime, "image/png", "text/plain"}, nil
+	default:
+		return []string{"image/png", "text/plain"}, nil
+	}
 }
 
 func (c *wslClipboard) ReadText(ctx context.Context) (string, error) {
@@ -147,23 +296,50 @@ func (c *wslClipboard) WriteText(ctx context.Context, text string) error {
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 	payload := []byte(base64.StdEncoding.EncodeToString([]byte(text)))
 	_, err := c.run(ctx, psWriteTextScript, payload)
+	c.invalidate()
 	return err
 }
 
-// wslClipboardTimeout bounds each powershell.exe call made for the bridge.
-const wslClipboardTimeout = 10 * time.Second
+// ReadImage serves a bitmap as PNG, and a copied image file either as its own
+// type (the original bytes) or as PNG (converted in Go).
+func (c *wslClipboard) ReadImage(ctx context.Context, mime string) ([]byte, error) {
+	snap, err := c.snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case snap == nil:
+		return nil, errClipboardEmpty
+	case snap.png != nil:
+		if mime != "image/png" {
+			return nil, errClipboardEmpty
+		}
+		return snap.png, nil
+	}
 
-// useWSLClipboardFuncs points the bridge's host clipboard at Windows.
-func useWSLClipboardFuncs() {
-	clip := newWSLClipboard()
-	readHostClipboard = func() (string, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), wslClipboardTimeout)
-		defer cancel()
-		return clip.ReadText(ctx)
+	file := snap.file
+	if mime != file.mime && mime != "image/png" {
+		return nil, errClipboardEmpty
 	}
-	writeHostClipboard = func(text string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), wslClipboardTimeout)
-		defer cancel()
-		return clip.WriteText(ctx, text)
+	data, err := c.readWindowsFile(ctx, file.windowsPath)
+	if err != nil {
+		return nil, err
 	}
+	if mime == file.mime {
+		return data, nil
+	}
+	return convertImageToPNG(data)
+}
+
+func (c *wslClipboard) WriteImage(ctx context.Context, mime string, data []byte) error {
+	switch mime {
+	case "image/png", "image/bmp", "image/jpeg", "image/gif":
+		// Formats System.Drawing decodes.
+	default:
+		return errClipboardUnsupported
+	}
+	payload := []byte(base64.StdEncoding.EncodeToString(data))
+	_, err := c.run(ctx, psWriteImageScript, payload)
+	c.invalidate()
+	return err
 }
