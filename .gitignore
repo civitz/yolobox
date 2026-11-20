@@ -35,3 +35,6 @@ Thumbs.db
 docs/node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Local builds and spike binaries
+/dist/

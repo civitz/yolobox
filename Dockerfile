@@ -205,6 +205,19 @@ RUN printf '%s\n' \
     '        done' \
     '        copy_to_host' \
     '        ;;' \
+    '    powershell.exe)' \
+    '        case "$*" in' \
+    '            *Get-Clipboard*)' \
+    '                text="$(paste_from_host; printf x)"' \
+    '                text="${text%x}"' \
+    '                if [ -n "$text" ]; then printf "%s\n" "$text"; fi' \
+    '                ;;' \
+    '            *)' \
+    '                echo "only Get-Clipboard is available through the yolobox clipboard bridge" >&2' \
+    '                exit 1' \
+    '                ;;' \
+    '        esac' \
+    '        ;;' \
     '    *)' \
     '        echo "unsupported yolobox clipboard command: $cmd" >&2' \
     '        exit 1' \
@@ -217,7 +230,8 @@ RUN printf '%s\n' \
     && ln -s yolobox-clipboard /opt/yolobox/bin/wl-copy \
     && ln -s yolobox-clipboard /opt/yolobox/bin/wl-paste \
     && ln -s yolobox-clipboard /opt/yolobox/bin/xclip \
-    && ln -s yolobox-clipboard /opt/yolobox/bin/xsel
+    && ln -s yolobox-clipboard /opt/yolobox/bin/xsel \
+    && ln -s yolobox-clipboard /opt/yolobox/bin/powershell.exe
 
 # URL open shims used by --open-bridge. These intentionally accept only a
 # single URL argument; the host bridge validates that it is http or https.

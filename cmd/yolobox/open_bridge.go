@@ -130,11 +130,19 @@ func validateOpenURL(raw string) error {
 
 func defaultOpenHostURL(openURL string) error {
 	var cmd *exec.Cmd
-	switch goruntime.GOOS {
-	case "darwin":
+	switch {
+	case goruntime.GOOS == "darwin":
 		cmd = exec.Command("open", openURL)
-	case "windows":
+	case goruntime.GOOS == "windows":
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", openURL)
+	case wslInteropAvailable():
+		// Inside WSL there is usually no xdg-open; hand the URL to the
+		// Windows default browser through interop.
+		rundll32 := findWindowsExe("", "rundll32.exe", defaultWindowsRundll32)
+		if rundll32 == "" {
+			return fmt.Errorf("rundll32.exe not found; is WSL interop enabled?")
+		}
+		cmd = exec.Command(rundll32, "url.dll,FileProtocolHandler", openURL)
 	default:
 		cmd = exec.Command("xdg-open", openURL)
 	}

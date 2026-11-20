@@ -151,6 +151,8 @@ runtime_args = ["--security-opt", "seccomp=unconfined"]
 
 Set `clipboard = true` or pass `--clipboard` to bridge text clipboard copy/paste between the container and the host. yolobox starts a short-lived host proxy for the session and exposes clipboard command shims inside the container: `pbcopy`, `pbpaste`, `xclip`, `xsel`, `wl-copy`, and `wl-paste`.
 
+When yolobox runs inside WSL (as it does on Windows), it serves the Windows clipboard through `powershell.exe`. Set `YOLOBOX_CLIPBOARD_BACKEND=native` to use the Linux clipboard tools instead, or `=wsl` to force the Windows clipboard.
+
 `clipboard = true` cannot be combined with `no_network = true`.
 
 ## Host URL open bridge

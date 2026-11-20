@@ -160,7 +160,7 @@ func preprocessCopilotConfig(srcPath string, stripAuth bool) (string, error) {
 // the entrypoint import area, plus temp paths to clean up and, for Apple
 // container, files to place under the host-files directory.
 func copilotConfigMounts(noAuth, appleContainer bool) ([]string, []string, map[string]string, error) {
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -298,7 +298,7 @@ func (a copilotAccount) ghHostname() string {
 // but found still reports true. When config selects an account, every source
 // is scoped to it so another stored account is never forwarded instead.
 func getCopilotToken() (token string, found bool) {
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return "", false
 	}

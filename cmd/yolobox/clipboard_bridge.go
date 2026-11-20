@@ -32,6 +32,11 @@ type clipboardBridge struct {
 }
 
 func startClipboardBridge(runtimeName string) (*clipboardBridge, error) {
+	// Inside WSL, serve the Windows clipboard rather than the distro's.
+	if useWSLHost() {
+		useWSLClipboardFuncs()
+	}
+
 	listener, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		return nil, fmt.Errorf("failed to start clipboard bridge: %w", err)

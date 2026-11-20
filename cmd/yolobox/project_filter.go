@@ -42,7 +42,7 @@ func resolveHostPath(path string, projectDir string) (string, error) {
 		return "", fmt.Errorf("empty path")
 	}
 	if strings.HasPrefix(path, "~") {
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return "", err
 		}

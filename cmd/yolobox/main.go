@@ -1670,7 +1670,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// hottest part of ~/.claude on every start.
 	if cfg.ClaudeConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1732,7 +1732,10 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		// avoid conflicts when multiple yolobox instances run concurrently)
 		if !cfg.NoClaudeAuth {
 			if creds := getClaudeCredentials(); creds != "" {
-				tmpDir := filepath.Join(home, ".yolobox", "tmp")
+				// Staging stays on the process home, which the runtime can
+				// see, even when config comes from YOLOBOX_HOST_HOME.
+				stagingHome, _ := os.UserHomeDir()
+				tmpDir := filepath.Join(stagingHome, ".yolobox", "tmp")
 				if err := os.MkdirAll(tmpDir, 0700); err == nil {
 					f, err := os.CreateTemp(tmpDir, "claude-credentials-*.json")
 					if err == nil {
@@ -1766,7 +1769,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// Mount Gemini/Antigravity config from host to staging area (copied to /home/yolo by entrypoint)
 	if cfg.GeminiConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1790,7 +1793,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// Mount Kimi Code config from host to staging area (synced to /home/yolo by entrypoint)
 	if cfg.KimiConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1804,7 +1807,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// Mount OpenCode config from host to staging area (copied to /home/yolo by entrypoint)
 	if cfg.OpencodeConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1828,7 +1831,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// Mount Pi config from host to staging area (copied to /home/yolo by entrypoint)
 	if cfg.PiConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1855,7 +1858,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// the hottest part of the Codex tree.
 	if cfg.CodexConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1890,7 +1893,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// Mount git config from host to staging area (copied to /home/yolo by entrypoint)
 	if cfg.GitConfig {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1909,7 +1912,7 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	// These are the global/user-level instruction files, not project-level ones
 	if cfg.CopyAgentInstructions {
 		started = time.Now()
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2167,7 +2170,7 @@ func resolvePath(path string, projectDir string) (string, error) {
 		return "", fmt.Errorf("empty path")
 	}
 	if strings.HasPrefix(path, "~") {
-		home, err := os.UserHomeDir()
+		home, err := hostHomeDir()
 		if err != nil {
 			return "", err
 		}

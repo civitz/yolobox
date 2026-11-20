@@ -8,6 +8,12 @@ there is no `v0.6.0` tag in this repository.
 
 ## Unreleased
 
+### Added
+
+- `YOLOBOX_HOST_HOME` points host config lookups (agent config sync, `.gitconfig`, global config, `~` in user paths) at another home without changing `HOME`. The Windows wrapper uses it for the Windows profile.
+- With `--open-bridge`, a yolobox running inside WSL opens URLs in the Windows default browser.
+- A yolobox running inside WSL serves the Windows clipboard (text) through `powershell.exe`, including Claude Code's right-click paste.
+
 ## v0.19.13 - 2026-10-31
 
 ### Changed

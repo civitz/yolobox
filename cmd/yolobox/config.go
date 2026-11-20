@@ -128,7 +128,7 @@ func globalConfigPath() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "yolobox", "config.toml"), nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := hostHomeDir()
 	if err != nil {
 		return "", err
 	}
