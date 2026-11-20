@@ -51,7 +51,7 @@ If you want to narrow the container's view of the project itself, use `--exclude
 Some flags deliberately widen the trust boundary:
 
 - `--docker` mounts the host Docker socket into the container
-- `--clipboard` lets clipboard commands in the container read and write the host text clipboard through a short-lived proxy
+- `--clipboard` lets clipboard commands in the container read and write the host text clipboard through a short-lived proxy. The proxy listens on all interfaces for the container to reach it and requires a per-session 256-bit token; on Windows, WSL may also forward its port to the host's localhost
 - `--claude-config`, `--codex-config`, `--copilot-config`, `--gemini-config`, `--kimi-config`, `--opencode-config`, `--pi-config`, and `--git-config` copy or sync selected host config into the container; `--claude-config` live-mounts host `~/.claude/projects` read/write, including with `--no-claude-auth`, `--codex-config` similarly live-mounts host Codex sessions read/write for resume continuity, and `--copilot-config` live-mounts host `~/.copilot/session-state` read/write and forwards the host Copilot login unless `--no-copilot-auth` is set; add `--no-claude-auth` when the box should keep an independent Claude login, `--gemini-config` covers Gemini and Antigravity config under `~/.gemini`, and `--kimi-config` includes Kimi Code credentials and sessions under `~/.kimi-code`
 - `--open-bridge` lets `open` and `xdg-open` commands in the container ask the host to open HTTP(S) URLs
 - `--gh-token` forwards a GitHub token for `gh` and HTTPS Git authentication

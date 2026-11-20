@@ -10,6 +10,7 @@ there is no `v0.6.0` tag in this repository.
 
 ### Added
 
+- Windows support through a Podman machine, with no compiled Windows program: `windows/install.ps1` installs the Linux yolobox and a PowerShell wrapper (`yolobox.ps1`) that runs it inside the machine's WSL distro, so it also works under Smart App Control. The wrapper translates drive paths (`D:\x` → `/mnt/d/x`, including `--mount`, `--copy-as` and `--customize-file`), reads config from the Windows profile, forwards API keys, and routes `yolobox upgrade` and `yolobox uninstall --force` through the installer.
 - `YOLOBOX_HOST_HOME` points host config lookups (agent config sync, `.gitconfig`, global config, `~` in user paths) at another home without changing `HOME`. The Windows wrapper uses it for the Windows profile.
 - With `--open-bridge`, a yolobox running inside WSL opens URLs in the Windows default browser.
 - A yolobox running inside WSL serves the Windows clipboard (text) through `powershell.exe`, including Claude Code's right-click paste.

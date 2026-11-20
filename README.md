@@ -41,6 +41,15 @@ brew install finbarr/tap/yolobox
 curl -fsSL https://raw.githubusercontent.com/finbarr/yolobox/master/install.sh | bash
 ```
 
+On Windows, yolobox runs through a Podman machine, with no compiled Windows program involved. Install from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/finbarr/yolobox/master/windows/install.ps1 -OutFile "$env:TEMP\yolobox-install.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\yolobox-install.ps1"
+```
+
+See [Windows](https://yolobox.dev/getting-started#windows) for requirements and details.
+
 Homebrew installs bash and zsh completions automatically. For script installs, see [shell completions](https://yolobox.dev/getting-started#shell-completions).
 
 Then from any project:

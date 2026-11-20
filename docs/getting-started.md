@@ -34,6 +34,51 @@ curl -fsSL https://raw.githubusercontent.com/finbarr/yolobox/master/install.sh |
 
 The install script downloads a release binary when one is available for your platform. If it cannot, it falls back to building from source.
 
+### Windows
+
+On Windows, yolobox runs through a Podman machine. The `yolobox` command is a PowerShell script that runs the Linux yolobox inside the machine's WSL distro. No compiled Windows program is involved, so it also works where Smart App Control or similar policies block unsigned executables.
+
+You need WSL 2 and a Podman machine. Install [Podman Desktop](https://podman-desktop.io) or the Podman CLI, then:
+
+```powershell
+podman machine init
+podman machine start
+```
+
+Install yolobox from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/finbarr/yolobox/master/windows/install.ps1 -OutFile "$env:TEMP\yolobox-install.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\yolobox-install.ps1"
+```
+
+The installer checks Podman, downloads the Linux release binary and verifies its checksum, installs it with the wrapper into `%LOCALAPPDATA%\yolobox`, and puts that folder first on your user `PATH`. If PowerShell's execution policy blocks local scripts, it offers to set `RemoteSigned` for your user. Open a new PowerShell window afterwards:
+
+```powershell
+cd D:\path\to\your\project
+yolobox claude
+```
+
+How it fits together:
+
+- Run yolobox from a folder on a drive letter. `D:\path\to\project` appears in the box as `/mnt/d/path/to/project`. Network shares and `\\wsl$` paths are not supported.
+- Windows paths given to `--mount`, `--copy-as` and `--customize-file` are translated the same way.
+- Config comes from your Windows profile (`%USERPROFILE%\.config\yolobox\config.toml`, `%USERPROFILE%\.claude`, `%USERPROFILE%\.gitconfig`, and so on).
+- API keys such as `ANTHROPIC_API_KEY` and any `YOLOBOX_*` settings set in Windows are forwarded.
+- `--clipboard` uses the Windows clipboard (text) and `--open-bridge` opens URLs in your Windows browser.
+- `yolobox upgrade` reruns the installer. `yolobox uninstall --force` removes yolobox's config and volumes, then the installation. To remove only the installation, run `install.ps1 -Uninstall`.
+
+Optional environment variables for the wrapper:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `YOLOBOX_WSL_DISTRO` | `podman-machine-default` | WSL distro to run yolobox in |
+| `YOLOBOX_PODMAN_MACHINE` | the distro name | Podman machine to start when it is stopped |
+| `YOLOBOX_LINUX_BIN` | `yolobox-linux` next to the wrapper | Linux binary to run |
+| `YOLOBOX_WRAPPER_DEBUG` | unset | `1` prints the `wsl.exe` command line |
+
+Windows PowerShell 5.1 has some limits when passing arguments to `wsl.exe`. Arguments containing double quotes are mangled, empty arguments are dropped, and a bare `--` is consumed (quote it as `'--'`). Single-quoted arguments such as `bash -c 'echo $HOME'` work. PowerShell 7.3 and later pass double quotes correctly.
+
 ### Shell completions
 
 Homebrew installs bash and zsh completions automatically. With bash, they need Homebrew's `bash-completion@2` loaded; with zsh, Homebrew's `site-functions` directory must be on `fpath` before `compinit`.
@@ -90,6 +135,7 @@ yolobox auto-detects the first supported runtime it can use.
 |---|---|
 | macOS | Docker Desktop, OrbStack, Colima, Podman machine, Apple container (macOS Tahoe+) |
 | Linux | Docker, Podman |
+| Windows | Podman machine, through the [PowerShell wrapper](#windows) |
 
 Force a runtime explicitly:
 
