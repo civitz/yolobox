@@ -71,6 +71,7 @@ request() {
     body="$(mktmp)" || exit 2
     tmpfiles+=("$body")
     local args=(-sS -X "$method" -o "$body" -w '%{http_code}'
+        --max-time "${YOLOBOX_CLIPBOARD_TIMEOUT:-15}"
         -H "X-Yolobox-Clipboard-Token: $token")
     if [ -n "$type" ]; then
         args+=(--url-query "type=$type")

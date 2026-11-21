@@ -99,6 +99,7 @@ jobs:
             CLAUDE_INSTALLER_CACHE_BUST=ci-${{ github.sha }}
             ANTIGRAVITY_CLI_INSTALLER_CACHE_BUST=ci-${{ github.sha }}
             KIMI_CODE_INSTALLER_CACHE_BUST=ci-${{ github.sha }}
+            VIBE_INSTALLER_CACHE_BUST=ci-${{ github.sha }}
 
       - name: Run container tool and ACP smoke tests
         run: make smoke-test IMAGE=yolobox:ci

@@ -373,6 +373,21 @@ func toolInvocationNeedsTTY(tool string, args []string) bool {
 				return false
 			}
 		}
+	case "vibe":
+		// "update" is not listed: when a newer version exists, Vibe shows an
+		// interactive install prompt and refuses to run without a terminal.
+		if len(args) > 0 {
+			switch args[0] {
+			case "mcp", "config", "run-server":
+				return false
+			}
+		}
+		for _, arg := range args {
+			if arg == "-p" || arg == "--prompt" || strings.HasPrefix(arg, "--prompt=") ||
+				arg == "--prompt-file" || strings.HasPrefix(arg, "--prompt-file=") {
+				return false
+			}
+		}
 	}
 	return true
 }

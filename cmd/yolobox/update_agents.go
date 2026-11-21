@@ -11,6 +11,7 @@ var agentUpdateTargets = []string{
 	"codex",
 	"gemini",
 	"kimi",
+	"vibe",
 	"agy",
 	"opencode",
 	"copilot",
@@ -18,15 +19,17 @@ var agentUpdateTargets = []string{
 }
 
 var agentUpdateAliases = map[string]string{
-	"claude":      "claude",
-	"codex":       "codex",
-	"gemini":      "gemini",
-	"kimi":        "kimi",
-	"agy":         "agy",
-	"antigravity": "agy",
-	"opencode":    "opencode",
-	"copilot":     "copilot",
-	"pi":          "pi",
+	"claude":       "claude",
+	"codex":        "codex",
+	"gemini":       "gemini",
+	"kimi":         "kimi",
+	"vibe":         "vibe",
+	"mistral-vibe": "vibe",
+	"agy":          "agy",
+	"antigravity":  "agy",
+	"opencode":     "opencode",
+	"copilot":      "copilot",
+	"pi":           "pi",
 }
 
 func updateAgents(args []string, projectDir string, fork *ForkConfig) error {
@@ -67,6 +70,7 @@ func updateAgentsDefaults(cfg Config) Config {
 	cfg.NoCopilotAuth = false
 	cfg.GeminiConfig = false
 	cfg.KimiConfig = false
+	cfg.VibeConfig = false
 	cfg.OpencodeConfig = false
 	cfg.PiConfig = false
 	cfg.GitConfig = false
@@ -254,6 +258,13 @@ update_kimi() {
     print_version "Kimi Code" kimi
 }
 
+update_vibe() {
+    require_command uv "Mistral Vibe"
+    printf 'updating Mistral Vibe\n'
+    uv tool install --upgrade --python /usr/bin/python3 mistral-vibe
+    print_version "Mistral Vibe" vibe
+}
+
 for target in "${targets[@]}"; do
     case "$target" in
         claude)
@@ -269,6 +280,9 @@ for target in "${targets[@]}"; do
             ;;
         kimi)
             update_kimi
+            ;;
+        vibe)
+            update_vibe
             ;;
         agy)
             update_antigravity

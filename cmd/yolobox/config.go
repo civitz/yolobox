@@ -48,6 +48,7 @@ type Config struct {
 	NoCopilotAuth         bool     `toml:"no_copilot_auth"`
 	GeminiConfig          bool     `toml:"gemini_config"`
 	KimiConfig            bool     `toml:"kimi_config"`
+	VibeConfig            bool     `toml:"vibe_config"`
 	OpencodeConfig        bool     `toml:"opencode_config"`
 	PiConfig              bool     `toml:"pi_config"`
 	GitConfig             bool     `toml:"git_config"`
@@ -228,6 +229,9 @@ func mergeConfig(dst *Config, src Config) {
 	if src.KimiConfig {
 		dst.KimiConfig = true
 	}
+	if src.VibeConfig {
+		dst.VibeConfig = true
+	}
 	if src.OpencodeConfig {
 		dst.OpencodeConfig = true
 	}
@@ -317,6 +321,7 @@ func printConfig(cfg Config) error {
 	fmt.Printf("%sno_copilot_auth:%s %t\n", colorBold, colorReset, cfg.NoCopilotAuth)
 	fmt.Printf("%sgemini_config:%s %t\n", colorBold, colorReset, cfg.GeminiConfig)
 	fmt.Printf("%skimi_config:%s %t\n", colorBold, colorReset, cfg.KimiConfig)
+	fmt.Printf("%svibe_config:%s %t\n", colorBold, colorReset, cfg.VibeConfig)
 	fmt.Printf("%sopencode_config:%s %t\n", colorBold, colorReset, cfg.OpencodeConfig)
 	fmt.Printf("%spi_config:%s %t\n", colorBold, colorReset, cfg.PiConfig)
 	fmt.Printf("%sgit_config:%s %t\n", colorBold, colorReset, cfg.GitConfig)
@@ -428,6 +433,9 @@ func saveGlobalConfig(cfg Config) error {
 	}
 	if cfg.KimiConfig {
 		lines = append(lines, "kimi_config = true")
+	}
+	if cfg.VibeConfig {
+		lines = append(lines, "vibe_config = true")
 	}
 	if cfg.OpencodeConfig {
 		lines = append(lines, "opencode_config = true")

@@ -16,10 +16,16 @@ there is no `v0.6.0` tag in this repository.
 - With `--open-bridge`, a yolobox running inside WSL opens URLs in the Windows default browser.
 - The Windows wrapper switches `[Console]::OutputEncoding` and `$OutputEncoding` to UTF-8 around `wsl.exe` (restoring them afterwards), so `yolobox run ... > out.txt` no longer turns UTF-8 output into mojibake under the OEM code page.
 - `scripts/claude-clipboard-probe.sh`, run by `make smoke-test`, fails when a Claude Code update changes the clipboard behaviour yolobox relies on.
+- Added first-class Mistral Vibe support with a bundled CLI, the `yolobox vibe` shortcut (runs `vibe --auto-approve`, also in prompt mode, and passes arguments through for subcommands, explicit approval flags, and `NO_YOLO=1`), setup and `default_harness = "vibe"` integration, `--vibe-config` / `vibe_config` to sync `~/.vibe` (without `.env`, `logs/`, or trust decisions), `--copy-agent-instructions` support for `~/.vibe/AGENTS.md` and `~/.vibe/skills/`, persistent updates through `yolobox update-agents vibe` (alias `mistral-vibe`), built-in yolobox guidance and skill, and `vibe update` on the bundled copy installing the updatable user copy (Vibe's own updater cannot update the image copy).
+- With `--clipboard`, Mistral Vibe copies reach the host clipboard through the box's clipboard shims (text only; Vibe has no clipboard image paste on Linux).
 
 ### Changed
 
 - `--clipboard` mounts yolobox's own copy of the clipboard shims into the box, so they always match the bridge, even with an older image. The shims also answer to `powershell.exe` for Claude Code's right-click paste on Windows, and exit 1 when the clipboard has no data of the requested type, so fallback chains continue.
+
+### Fixed
+
+- Clipboard shims now give up after 15 seconds when the host bridge does not answer, instead of hanging the calling tool (`YOLOBOX_CLIPBOARD_TIMEOUT` overrides the limit, in seconds).
 
 ## v0.19.13 - 2026-10-31
 

@@ -22,6 +22,7 @@ copilot_config = true
 # no_copilot_auth = true # keep the box's Copilot login independent from the host
 opencode_config = true
 kimi_config = true
+vibe_config = true
 pi_config = true
 gh_token = true
 rtk = true
@@ -96,7 +97,7 @@ Set `default_harness` to one AI shortcut name to make bare `yolobox` launch that
 default_harness = "codex"
 ```
 
-Valid values are `claude`, `codex`, `gemini`, `kimi`, `agy`, `antigravity`, `opencode`, `copilot`, `pi`, and `none`. Use `none` in project config to override a global default harness and keep bare `yolobox` as an interactive shell. `yolobox shell` always opens a shell regardless of this setting.
+Valid values are `claude`, `codex`, `gemini`, `kimi`, `vibe`, `agy`, `antigravity`, `opencode`, `copilot`, `pi`, and `none`. Use `none` in project config to override a global default harness and keep bare `yolobox` as an interactive shell. `yolobox shell` always opens a shell regardless of this setting.
 
 ## Project file filtering
 
@@ -153,6 +154,10 @@ Set `clipboard = true` or pass `--clipboard` to bridge clipboard copy/paste betw
 
 When yolobox runs inside WSL (as it does on Windows), it serves the Windows clipboard through `powershell.exe`. Set `YOLOBOX_CLIPBOARD_BACKEND=native` to use the Linux clipboard tools instead, or `=wsl` to force the Windows clipboard.
 
+Each shim request to the host bridge gives up after 15 seconds, so a stuck bridge cannot hang a tool forever (Mistral Vibe, for one, freezes its UI while a copy is in progress). Set `YOLOBOX_CLIPBOARD_TIMEOUT` (in seconds) to change the limit.
+
+Mistral Vibe copies (`/copy` and mouse selection) through the `wl-copy`/`xclip` shims when `--clipboard` is on. Without it, copying still works through OSC 52 in terminals that support it, and Vibe shows a harmless "install xclip" hint. Pasting text is done by the terminal (Ctrl+V or right-click). Vibe has no clipboard image paste on Linux, so there is none in the box either.
+
 `clipboard = true` cannot be combined with `no_network = true`.
 
 ## Host URL open bridge
@@ -182,11 +187,13 @@ Files copied if they exist on your host:
 | Codex skills | `~/.codex/skills/` | `/home/yolo/.codex/skills/` |
 | Kimi Code | `~/.kimi-code/AGENTS.md` | `/home/yolo/.kimi-code/AGENTS.md` |
 | Kimi Code skills | `~/.kimi-code/skills/` | `/home/yolo/.kimi-code/skills/` |
+| Mistral Vibe | `~/.vibe/AGENTS.md` | `/home/yolo/.vibe/AGENTS.md` |
+| Mistral Vibe skills | `~/.vibe/skills/` | `/home/yolo/.vibe/skills/` |
 | Pi | `~/.pi/agent/AGENTS.md` | `/home/yolo/.pi/agent/AGENTS.md` |
 | Pi skills | `~/.pi/agent/skills/` | `/home/yolo/.pi/agent/skills/` |
 | Copilot | `~/.copilot/agents/` | `/home/yolo/.copilot/agents/` |
 
-This copies instruction files and skills, not full configs, credentials, settings, or history. For full tool configs, use `--claude-config`, `--codex-config`, `--copilot-config`, `--gemini-config`, `--kimi-config`, `--opencode-config`, or `--pi-config`. Antigravity CLI stores its config under `~/.gemini/antigravity-cli`, so `--gemini-config` covers Antigravity too.
+This copies instruction files and skills, not full configs, credentials, settings, or history. For full tool configs, use `--claude-config`, `--codex-config`, `--copilot-config`, `--gemini-config`, `--kimi-config`, `--vibe-config`, `--opencode-config`, or `--pi-config`. Antigravity CLI stores its config under `~/.gemini/antigravity-cli`, so `--gemini-config` covers Antigravity too.
 
 ## Independent Claude login
 
@@ -222,6 +229,19 @@ no_copilot_auth = true
 ```
 
 In this mode, yolobox skips keychain and `gh` token extraction, strips login and token keys from the synced `config.json` while keeping the box's own, and suppresses automatic `COPILOT_GITHUB_TOKEN` passthrough. Run `/login` once inside the box; it persists in the `yolobox-home` volume. `GH_TOKEN`/`GITHUB_TOKEN` passthrough and `--gh-token` are unchanged, and Copilot CLI uses them before its stored login, so add `--no-env-passthrough` if those must not authenticate Copilot. `no_copilot_auth` requires `copilot_config`, and session history stays live-mounted.
+
+## Mistral Vibe config and login {#mistral-vibe-config-and-login}
+
+`vibe_config = true` (or `--vibe-config`) incrementally syncs durable host Mistral Vibe configuration from `~/.vibe` on every start (on Windows it reads the Windows profile through `YOLOBOX_HOST_HOME`). It copies everything except the paths listed below, for example `config.toml`, `AGENTS.md`, `skills/`, `agents/`, `prompts/`, `hooks.toml`, `plugins/`, and the project lists. It never removes container-local files.
+
+It deliberately does **not** copy:
+
+- `.env`, which holds your API key and other secrets. Copying it would leave them in the shared `yolobox-home` volume, where every later box can read them.
+- `logs/`, which holds your conversations. Syncing them would slow every start, and the host paths recorded in them do not match the box paths, so `--resume` could not use them anyway.
+- `trusted_folders.toml`, the trusted-folder list. Trust decisions stay per box, because host paths do not match box paths.
+- caches, lock files, and history.
+
+To authenticate, set `MISTRAL_API_KEY` on the host (it is already [auto-forwarded](#auto-forwarded-environment-variables)), or sign in once inside the box. The browser sign-in needs `--open-bridge` so the box can open the login page on the host. That login is stored in the box's `~/.vibe/.env`, which lives in the `yolobox-home` volume and persists across runs.
 
 ## Explicit environment variables
 
@@ -292,15 +312,15 @@ The manifest is intended for agents and scripts running inside the container. It
 
 The canonical skill packages live under [`skills/`](https://github.com/finbarr/yolobox/tree/master/skills):
 
-- [`skills/yolobox`](https://github.com/finbarr/yolobox/tree/master/skills/yolobox) is the inside-the-box skill that orients the agent to the trusted yolobox sandbox it is running in, then uses this manifest to explain the current sandbox accurately. Its `Readonly project mode` line reports the launch mode; its `Project writable now` line is a live filesystem check. yolobox currently installs it for Claude, Codex, and Kimi Code sessions inside the container.
+- [`skills/yolobox`](https://github.com/finbarr/yolobox/tree/master/skills/yolobox) is the inside-the-box skill that orients the agent to the trusted yolobox sandbox it is running in, then uses this manifest to explain the current sandbox accurately. Its `Readonly project mode` line reports the launch mode; its `Project writable now` line is a live filesystem check. yolobox currently installs it for Claude, Codex, Kimi Code, and Mistral Vibe sessions inside the container.
 - [`skills/yolobox-orchestrator`](https://github.com/finbarr/yolobox/tree/master/skills/yolobox-orchestrator) is the host-side skill for agents that need to launch or control yolobox itself.
 
-yolobox also injects a managed guidance block into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.kimi-code/AGENTS.md` so those agents know to use the `yolobox` skill when current sandbox assumptions matter.
+yolobox also injects a managed guidance block into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.kimi-code/AGENTS.md`, and `~/.vibe/AGENTS.md` so those agents know to use the `yolobox` skill when current sandbox assumptions matter.
 
 ## Config sync warning
 
 ::: warning
-Setting `claude_config = true`, `codex_config = true`, `copilot_config = true`, `gemini_config = true`, `kimi_config = true`, `opencode_config = true`, or `pi_config = true` in config syncs your host config on every container start. Claude config sync incrementally mirrors durable files, skips volatile `debug/`, preserves a valid in-container credential when the host has no usable credential, and live-mounts host `projects/` read/write; with `no_claude_auth = true`, it also preserves the container account identity and excludes host credentials. Gemini/Antigravity, OpenCode, and Pi config sync replaces the matching in-container config directory, overwriting changes made inside the container. Antigravity CLI stores its settings under `~/.gemini/antigravity-cli`, so `gemini_config = true` covers it. Kimi Code config sync incrementally merges host config, credentials, skills, and sessions into `~/.kimi-code` while leaving the container's `bin/`, `logs/`, and `updates/` paths alone. Codex config sync incrementally merges durable host files into `~/.codex`, skips volatile Codex log, state, cache, and temp files, preserves a valid in-container `auth.json` when the host copy has no usable auth file, and live-mounts host Codex sessions so resume history stays current without copying it. Prefer the config flags for ongoing syncs. A one-time run imports durable config, but live Claude project history and Codex sessions require the matching flag on each run. Copilot config sync incrementally merges durable host files into `~/.copilot`, skips host binaries, logs, caches, and databases, merges `config.json` while keeping container login keys the host lacks, and live-mounts host `session-state/`.
+Setting `claude_config = true`, `codex_config = true`, `copilot_config = true`, `gemini_config = true`, `kimi_config = true`, `vibe_config = true`, `opencode_config = true`, or `pi_config = true` in config syncs your host config on every container start. Claude config sync incrementally mirrors durable files, skips volatile `debug/`, preserves a valid in-container credential when the host has no usable credential, and live-mounts host `projects/` read/write; with `no_claude_auth = true`, it also preserves the container account identity and excludes host credentials. Gemini/Antigravity, OpenCode, and Pi config sync replaces the matching in-container config directory, overwriting changes made inside the container. Antigravity CLI stores its settings under `~/.gemini/antigravity-cli`, so `gemini_config = true` covers it. Kimi Code config sync incrementally merges host config, credentials, skills, and sessions into `~/.kimi-code` while leaving the container's `bin/`, `logs/`, and `updates/` paths alone. Mistral Vibe config sync incrementally merges host `~/.vibe` into the container, skipping `.env`, `logs/`, caches, and locks, and never removes container-local files (see [Mistral Vibe config and login](#mistral-vibe-config-and-login)). Codex config sync incrementally merges durable host files into `~/.codex`, skips volatile Codex log, state, cache, and temp files, preserves a valid in-container `auth.json` when the host copy has no usable auth file, and live-mounts host Codex sessions so resume history stays current without copying it. Prefer the config flags for ongoing syncs. A one-time run imports durable config, but live Claude project history and Codex sessions require the matching flag on each run. Copilot config sync incrementally merges durable host files into `~/.copilot`, skips host binaries, logs, caches, and databases, merges `config.json` while keeping container login keys the host lacks, and live-mounts host `session-state/`.
 :::
 
 ## Startup timing diagnostics

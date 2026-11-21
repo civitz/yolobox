@@ -75,6 +75,7 @@ var toolShortcuts = []string{
 	"codex",
 	"gemini",
 	"kimi",
+	"vibe",
 	"agy",
 	"antigravity",
 	"opencode",
@@ -345,6 +346,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  --no-copilot-auth     Keep Copilot login container-local with --copilot-config")
 	fmt.Fprintln(os.Stderr, "  --gemini-config       Copy host Gemini/Antigravity config to container")
 	fmt.Fprintln(os.Stderr, "  --kimi-config         Sync host Kimi Code config to container")
+	fmt.Fprintln(os.Stderr, "  --vibe-config         Sync host Mistral Vibe config (~/.vibe) to container")
 	fmt.Fprintln(os.Stderr, "  --opencode-config     Copy host OpenCode config to container")
 	fmt.Fprintln(os.Stderr, "  --pi-config           Copy host Pi config to container")
 	fmt.Fprintln(os.Stderr, "  --git-config          Copy host git config to container")
@@ -380,7 +382,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "%sCONFIG:%s\n", colorBold, colorReset)
 	fmt.Fprintln(os.Stderr, "  Global:  ~/.config/yolobox/config.toml")
 	fmt.Fprintln(os.Stderr, "  Project: .yolobox.toml")
-	fmt.Fprintln(os.Stderr, "  default_harness = \"codex\"  # or claude, gemini, kimi, agy, opencode, copilot, pi, none")
+	fmt.Fprintln(os.Stderr, "  default_harness = \"codex\"  # or claude, gemini, kimi, vibe, agy, opencode, copilot, pi, none")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "%sAUTO-FORWARDED ENV VARS:%s\n", colorBold, colorReset)
 	for _, line := range wrapCommaList(autoPassthroughEnvVars, 76) {
@@ -444,6 +446,7 @@ func newBaseFlagSet(name string) (*flag.FlagSet, func(*Config) error) {
 		noCopilotAuth         bool
 		geminiConfig          bool
 		kimiConfig            bool
+		vibeConfig            bool
 		opencodeConfig        bool
 		piConfig              bool
 		gitConfig             bool
@@ -496,6 +499,7 @@ func newBaseFlagSet(name string) (*flag.FlagSet, func(*Config) error) {
 	fs.BoolVar(&noCopilotAuth, "no-copilot-auth", false, "keep Copilot login container-local when syncing host config")
 	fs.BoolVar(&geminiConfig, "gemini-config", false, "copy host Gemini/Antigravity config to container")
 	fs.BoolVar(&kimiConfig, "kimi-config", false, "sync host Kimi Code config to container")
+	fs.BoolVar(&vibeConfig, "vibe-config", false, "sync host Mistral Vibe config (~/.vibe) to container")
 	fs.BoolVar(&opencodeConfig, "opencode-config", false, "copy host OpenCode config to container")
 	fs.BoolVar(&piConfig, "pi-config", false, "copy host Pi config to container")
 	fs.BoolVar(&gitConfig, "git-config", false, "copy host git config to container")
@@ -590,6 +594,9 @@ func newBaseFlagSet(name string) (*flag.FlagSet, func(*Config) error) {
 		}
 		if kimiConfig {
 			cfg.KimiConfig = true
+		}
+		if vibeConfig {
+			cfg.VibeConfig = true
 		}
 		if opencodeConfig {
 			cfg.OpencodeConfig = true
@@ -1080,6 +1087,9 @@ func runSetup() (Config, error) {
 	if cfg.KimiConfig {
 		selectedOptions = append(selectedOptions, "kimi_config")
 	}
+	if cfg.VibeConfig {
+		selectedOptions = append(selectedOptions, "vibe_config")
+	}
 	if cfg.OpencodeConfig {
 		selectedOptions = append(selectedOptions, "opencode_config")
 	}
@@ -1140,6 +1150,7 @@ func runSetup() (Config, error) {
 					huh.NewOption("Codex", "codex"),
 					huh.NewOption("Gemini", "gemini"),
 					huh.NewOption("Kimi Code", "kimi"),
+					huh.NewOption("Mistral Vibe", "vibe"),
 					huh.NewOption("Antigravity", "agy"),
 					huh.NewOption("OpenCode v2", "opencode"),
 					huh.NewOption("Copilot", "copilot"),
@@ -1156,6 +1167,7 @@ func runSetup() (Config, error) {
 					huh.NewOption("Copilot config (sync ~/.copilot; live sessions)", "copilot_config"),
 					huh.NewOption("Gemini/Antigravity config (copy ~/.gemini)", "gemini_config"),
 					huh.NewOption("Kimi Code config (sync ~/.kimi-code)", "kimi_config"),
+					huh.NewOption("Vibe config (sync ~/.vibe)", "vibe_config"),
 					huh.NewOption("OpenCode config (copy ~/.config/opencode)", "opencode_config"),
 					huh.NewOption("Pi config (copy ~/.pi/agent)", "pi_config"),
 					huh.NewOption("GitHub token (gh + HTTPS git auth)", "gh_token"),
@@ -1262,6 +1274,7 @@ func runSetup() (Config, error) {
 	cfg.NoCopilotAuth = cfg.CopilotConfig && !copyCopilotAuth
 	cfg.GeminiConfig = contains(selectedOptions, "gemini_config")
 	cfg.KimiConfig = contains(selectedOptions, "kimi_config")
+	cfg.VibeConfig = contains(selectedOptions, "vibe_config")
 	cfg.OpencodeConfig = contains(selectedOptions, "opencode_config")
 	cfg.PiConfig = contains(selectedOptions, "pi_config")
 	cfg.GhToken = contains(selectedOptions, "gh_token")
@@ -1353,7 +1366,7 @@ func splitToolArgs(args []string) (yoloboxArgs, toolArgs []string) {
 		"runtime": true, "image": true, "name": true, "network": true, "pod": true,
 		"ssh-agent": true, "no-ssh-agent": true, "readonly-project": true, "no-network": true, "no-env-passthrough": true,
 		"no-yolo": true, "scratch": true, "claude-config": true, "no-claude-auth": true,
-		"codex-config": true, "copilot-config": true, "no-copilot-auth": true, "gemini-config": true, "kimi-config": true, "opencode-config": true, "pi-config": true, "git-config": true, "gh-token": true, "rtk": true,
+		"codex-config": true, "copilot-config": true, "no-copilot-auth": true, "gemini-config": true, "kimi-config": true, "vibe-config": true, "opencode-config": true, "pi-config": true, "git-config": true, "gh-token": true, "rtk": true,
 		"copy-agent-instructions": true, "no-project": true, "docker": true, "setup": true, "mount": true,
 		"clipboard": true, "open-bridge": true,
 		"exclude": true, "copy-as": true,
@@ -1809,6 +1822,20 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		traceDuration("host: mount Kimi Code config", started)
 	}
 
+	// Mount Mistral Vibe config from host to staging area (synced to /home/yolo by entrypoint)
+	if cfg.VibeConfig {
+		started = time.Now()
+		home, err := hostHomeDir()
+		if err != nil {
+			return nil, nil, err
+		}
+		vibeConfigDir := filepath.Join(home, ".vibe")
+		if info, err := os.Stat(vibeConfigDir); err == nil && info.IsDir() {
+			args = append(args, "-v", vibeConfigDir+":/host-vibe/.vibe:ro")
+		}
+		traceDuration("host: mount Mistral Vibe config", started)
+	}
+
 	// Mount OpenCode config from host to staging area (copied to /home/yolo by entrypoint)
 	if cfg.OpencodeConfig {
 		started = time.Now()
@@ -2001,6 +2028,30 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 				}
 			}
 			args = append(args, "-v", mountSrc+":/host-agent-instructions/kimi/skills:ro")
+		}
+		// Mistral Vibe: ~/.vibe/AGENTS.md
+		vibeMd := filepath.Join(home, ".vibe", "AGENTS.md")
+		if _, err := os.Stat(vibeMd); err == nil {
+			if appleContainer {
+				appleContainerFiles[vibeMd] = "agent-instructions/vibe/AGENTS.md"
+			} else {
+				args = append(args, "-v", vibeMd+":/host-agent-instructions/vibe/AGENTS.md:ro")
+			}
+		}
+		// Mistral Vibe: ~/.vibe/skills/ directory
+		vibeSkills := filepath.Join(home, ".vibe", "skills")
+		if info, err := os.Stat(vibeSkills); err == nil && info.IsDir() {
+			mountSrc := vibeSkills
+			if dirContainsSymlinks(vibeSkills) {
+				staged, err := stageDirResolvingSymlinks(vibeSkills)
+				if err != nil {
+					warn("Failed to resolve symlinks in %s: %s", vibeSkills, err)
+				} else {
+					mountSrc = staged
+					cleanupPaths = append(cleanupPaths, staged)
+				}
+			}
+			args = append(args, "-v", mountSrc+":/host-agent-instructions/vibe/skills:ro")
 		}
 		// Pi: ~/.pi/agent/AGENTS.md
 		piMd := filepath.Join(home, ".pi", "agent", "AGENTS.md")

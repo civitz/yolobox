@@ -84,6 +84,7 @@ type contextConfigManifest struct {
 	NoCopilotAuth         bool                           `json:"no_copilot_auth"`
 	GeminiConfig          bool                           `json:"gemini_config"`
 	KimiConfig            bool                           `json:"kimi_config"`
+	VibeConfig            bool                           `json:"vibe_config"`
 	OpencodeConfig        bool                           `json:"opencode_config"`
 	PiConfig              bool                           `json:"pi_config"`
 	GitConfig             bool                           `json:"git_config"`
@@ -206,6 +207,7 @@ func buildContextManifest(cfg Config, projectDir string, command []string, inter
 			NoCopilotAuth:         cfg.NoCopilotAuth,
 			GeminiConfig:          cfg.GeminiConfig,
 			KimiConfig:            cfg.KimiConfig,
+			VibeConfig:            cfg.VibeConfig,
 			OpencodeConfig:        cfg.OpencodeConfig,
 			PiConfig:              cfg.PiConfig,
 			GitConfig:             cfg.GitConfig,

@@ -74,6 +74,12 @@ smoke-test: build
 		echo "  ✗ kimi"; \
 		failed=1; \
 	fi; \
+	if ./$(BINARY) run $(SMOKE_ARGS) --scratch vibe --version >/dev/null 2>&1; then \
+		echo "  ✓ vibe"; \
+	else \
+		echo "  ✗ vibe"; \
+		failed=1; \
+	fi; \
 	if ./$(BINARY) run $(SMOKE_ARGS) --scratch pi --version >/dev/null 2>&1; then \
 		echo "  ✓ pi"; \
 	else \
@@ -108,6 +114,20 @@ smoke-test: build
 		echo "  ✓ kimi wrapper matches real binary ($$RUN_VER)"; \
 	else \
 		echo "  ✗ kimi version mismatch: real=$$IMG_VER, wrapper=$$RUN_VER"; \
+		failed=1; \
+	fi; \
+	IMG_VER=$$(./$(BINARY) run $(SMOKE_ARGS) --scratch env NO_YOLO=1 vibe --version 2>/dev/null | head -1); \
+	RUN_VER=$$(./$(BINARY) run $(SMOKE_ARGS) --scratch vibe --version 2>/dev/null | head -1); \
+	if [ -n "$$RUN_VER" ] && [ "$$IMG_VER" = "$$RUN_VER" ]; then \
+		echo "  ✓ vibe wrapper matches real binary ($$RUN_VER)"; \
+	else \
+		echo "  ✗ vibe version mismatch: real=$$IMG_VER, wrapper=$$RUN_VER"; \
+		failed=1; \
+	fi; \
+	if ./$(BINARY) run $(SMOKE_ARGS) --scratch bash -c 'mkdir -p /tmp/yb-fake && ln -sf /bin/echo /tmp/yb-fake/vibe && export PATH=/opt/yolobox/bin:/tmp/yb-fake:$$PATH && [ "$$(vibe update)" = "update" ] && [ "$$(vibe -c)" = "--auto-approve -c" ]' >/dev/null 2>&1; then \
+		echo "  ✓ vibe update passes through without --auto-approve"; \
+	else \
+		echo "  ✗ vibe update wrapper check"; \
 		failed=1; \
 	fi; \
 	[ $$failed -eq 0 ]

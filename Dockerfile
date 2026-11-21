@@ -23,6 +23,7 @@ ENV LC_ALL=C.UTF-8
 ARG NPM_MIN_RELEASE_AGE_DAYS=7
 ARG ANTIGRAVITY_CLI_INSTALLER_CACHE_BUST=dev
 ARG KIMI_CODE_INSTALLER_CACHE_BUST=dev
+ARG VIBE_INSTALLER_CACHE_BUST=dev
 
 # =============================================================================
 # STABLE LAYERS — large, rarely change (ordered first to minimize re-downloads)
@@ -229,6 +230,51 @@ RUN cp /opt/yolobox/wrapper-template /opt/yolobox/bin/kimi \
         >> /opt/yolobox/bin/kimi \
     && chmod +x /opt/yolobox/bin/kimi
 
+# Mistral Vibe wrapper. Subcommands only count in first position, so they pass
+# through untouched (a flag in front would turn them into a chat message).
+# Headless mode (-p) denies tools without --auto-approve, so it keeps the flag.
+# Explicit approval/agent choices are left alone. The image copy in
+# /usr/local/bin is root-owned and cannot self-update, so its update checks are
+# disabled; a user copy (e.g. ~/.local/bin/vibe after update-agents) is not.
+# Vibe's own self-update only runs `uv tool upgrade mistral-vibe` / `brew
+# upgrade`, which cannot touch the root-owned image copy, so `vibe update` on
+# the image copy installs the updatable user copy instead (the same uv command
+# as `yolobox update-agents vibe`). NO_YOLO=1 exits in the template before this
+# body and therefore bypasses that redirect.
+# Keyring access works in the container, so no keyring switch is needed.
+# --trust is deliberately not added: it would also run untrusted project hooks
+# without asking. Vibe asks once per project that has AGENTS.md, .vibe/ or
+# .agents/, and the answer persists in trusted_folders.toml in the home volume.
+RUN cp /opt/yolobox/wrapper-template /opt/yolobox/bin/vibe \
+    && printf '%s\n' \
+        'if [ "$REAL_BIN" = /usr/local/bin/vibe ] && [ -z "${VIBE_ENABLE_UPDATE_CHECKS+x}" ]; then' \
+        '    export VIBE_ENABLE_UPDATE_CHECKS=false' \
+        'fi' \
+        'if [ "${1:-}" = update ] && [ "$REAL_BIN" = /usr/local/bin/vibe ]; then' \
+        '    echo "The bundled Mistral Vibe is read-only and cannot update itself. Installing an updatable copy into ~/.local/bin (same as yolobox update-agents vibe)..." >&2' \
+        '    if ! command -v uv >/dev/null 2>&1; then' \
+        '        echo "uv is not available here; run: yolobox update-agents vibe" >&2' \
+        '        exit 1' \
+        '    fi' \
+        '    uv tool install --upgrade --python /usr/bin/python3 mistral-vibe || exit $?' \
+        '    exec "$HOME/.local/bin/vibe" --version' \
+        'fi' \
+        'case "${1:-}" in' \
+        '    update|mcp|config|run-server)' \
+        '        exec "$REAL_BIN" "$@"' \
+        '        ;;' \
+        'esac' \
+        'for arg in "$@"; do' \
+        '    case "$arg" in' \
+        '        --auto-approve|--yolo|--approval-policy|--approval-policy=*|--smart-approve|--agent|--agent=*)' \
+        '            exec "$REAL_BIN" "$@"' \
+        '            ;;' \
+        '    esac' \
+        'done' \
+        'exec "$REAL_BIN" --auto-approve "$@"' \
+        >> /opt/yolobox/bin/vibe \
+    && chmod +x /opt/yolobox/bin/vibe
+
 # Antigravity CLI wrapper
 RUN cp /opt/yolobox/wrapper-template /opt/yolobox/bin/agy \
     && echo 'exec "$REAL_BIN" --dangerously-skip-permissions "$@"' >> /opt/yolobox/bin/agy \
@@ -360,7 +406,7 @@ RUN printf '%s\n' \
     chmod +x /usr/local/bin/yolobox-uid-fix.sh
 
 # Create entrypoint script
-RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions /host-copilot /host-copilot-session-state /host-gemini /host-kimi /host-opencode /host-pi /host-git /host-agent-instructions /host-files && \
+RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions /host-copilot /host-copilot-session-state /host-gemini /host-kimi /host-vibe /host-opencode /host-pi /host-git /host-agent-instructions /host-files && \
     printf '%s\n' \
     '#!/bin/bash' \
     '' \
@@ -577,6 +623,14 @@ RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions
     '    sudo rsync -a --chown=yolo:yolo --exclude=bin/ --exclude=logs/ --exclude=updates/ /host-kimi/.kimi-code/ /home/yolo/.kimi-code/' \
     'fi' \
     '' \
+    '# Sync Mistral Vibe config from host staging area if present. Secrets (.env),' \
+    '# conversations, caches and locks stay local to the box.' \
+    'if [ -d /host-vibe/.vibe ]; then' \
+    '    echo -e "\033[33m→ Syncing host Mistral Vibe config to container\033[0m" >&2' \
+    '    sudo mkdir -p /home/yolo/.vibe' \
+    '    sudo rsync -a --chown=yolo:yolo --exclude=.env --exclude=trusted_folders.toml --exclude="*.lock" --exclude=logs/ --exclude=cache.toml --exclude=ui_startup_config.json --exclude="*_cache.json" --exclude=skills-registry-cache/ --exclude=cache/ --exclude=locks/ --exclude=plugin-data/ --exclude=shell-tool/ --exclude=worktrees/ --exclude=vibehistory /host-vibe/.vibe/ /home/yolo/.vibe/' \
+    'fi' \
+    '' \
     '# Copy OpenCode config from host staging area if present' \
     'if [ -d /host-opencode/.config/opencode ]; then' \
     '    echo -e "\033[33m→ Copying host OpenCode config to container\033[0m" >&2' \
@@ -761,6 +815,25 @@ RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions
     '    sudo chown -R yolo:yolo /home/yolo/.kimi-code/skills' \
     '    COPIED_AGENT_INSTRUCTIONS=1' \
     'fi' \
+    '# Mistral Vibe: AGENTS.md' \
+    'VIBE_MD="/host-agent-instructions/vibe/AGENTS.md"' \
+    '[ ! -f "$VIBE_MD" ] && [ -f "$HF/agent-instructions/vibe/AGENTS.md" ] && VIBE_MD="$HF/agent-instructions/vibe/AGENTS.md"' \
+    'if [ -f "$VIBE_MD" ]; then' \
+    '    mkdir -p /home/yolo/.vibe' \
+    '    sudo cp -a "$VIBE_MD" /home/yolo/.vibe/AGENTS.md' \
+    '    sudo chown yolo:yolo /home/yolo/.vibe/AGENTS.md' \
+    '    COPIED_AGENT_INSTRUCTIONS=1' \
+    'fi' \
+    '# Mistral Vibe: skills/ directory' \
+    'VIBE_SKILLS_DIR="/host-agent-instructions/vibe/skills"' \
+    '[ ! -d "$VIBE_SKILLS_DIR" ] && [ -d "$HF/agent-instructions/vibe/skills" ] && VIBE_SKILLS_DIR="$HF/agent-instructions/vibe/skills"' \
+    'if [ -d "$VIBE_SKILLS_DIR" ]; then' \
+    '    mkdir -p /home/yolo/.vibe' \
+    '    sudo rm -rf /home/yolo/.vibe/skills' \
+    '    sudo cp -a "$VIBE_SKILLS_DIR" /home/yolo/.vibe/skills' \
+    '    sudo chown -R yolo:yolo /home/yolo/.vibe/skills' \
+    '    COPIED_AGENT_INSTRUCTIONS=1' \
+    'fi' \
     '# Pi: AGENTS.md' \
     'PI_MD="/host-agent-instructions/pi/AGENTS.md"' \
     '[ ! -f "$PI_MD" ] && [ -f "$HF/agent-instructions/pi/AGENTS.md" ] && PI_MD="$HF/agent-instructions/pi/AGENTS.md"' \
@@ -797,7 +870,7 @@ RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions
     '' \
     '# Install built-in yolobox skill from the image (named volume may shadow /home/yolo)' \
     'if [ -d /opt/yolobox/skills/yolobox ]; then' \
-    '    mkdir -p /home/yolo/.codex/skills /home/yolo/.claude/skills /home/yolo/.kimi-code/skills' \
+    '    mkdir -p /home/yolo/.codex/skills /home/yolo/.claude/skills /home/yolo/.kimi-code/skills /home/yolo/.vibe/skills' \
     '    sudo rm -rf /home/yolo/.codex/skills/yolobox-context' \
     '    sudo rm -rf /home/yolo/.codex/skills/yolobox' \
     '    sudo cp -a /opt/yolobox/skills/yolobox /home/yolo/.codex/skills/yolobox' \
@@ -805,13 +878,16 @@ RUN mkdir -p /host-claude /host-claude-projects /host-codex /host-codex-sessions
     '    sudo cp -a /opt/yolobox/skills/yolobox /home/yolo/.claude/skills/yolobox' \
     '    sudo rm -rf /home/yolo/.kimi-code/skills/yolobox' \
     '    sudo cp -a /opt/yolobox/skills/yolobox /home/yolo/.kimi-code/skills/yolobox' \
-    '    sudo chown -R yolo:yolo /home/yolo/.codex/skills/yolobox /home/yolo/.claude/skills/yolobox /home/yolo/.kimi-code/skills/yolobox' \
+    '    sudo rm -rf /home/yolo/.vibe/skills/yolobox' \
+    '    sudo cp -a /opt/yolobox/skills/yolobox /home/yolo/.vibe/skills/yolobox' \
+    '    sudo chown -R yolo:yolo /home/yolo/.codex/skills/yolobox /home/yolo/.claude/skills/yolobox /home/yolo/.kimi-code/skills/yolobox /home/yolo/.vibe/skills/yolobox' \
     'fi' \
     '' \
     '# Inject built-in agent guidance so supported agents use the yolobox skill when it matters' \
     'inject_agent_guidance /home/yolo/.claude/CLAUDE.md /opt/yolobox/agent-instructions/claude/yolobox.md "<!-- BEGIN YOLOBOX MANAGED BLOCK -->" "<!-- END YOLOBOX MANAGED BLOCK -->"' \
     'inject_agent_guidance /home/yolo/.codex/AGENTS.md /opt/yolobox/agent-instructions/codex/yolobox.md "# BEGIN YOLOBOX MANAGED BLOCK" "# END YOLOBOX MANAGED BLOCK"' \
     'inject_agent_guidance /home/yolo/.kimi-code/AGENTS.md /opt/yolobox/agent-instructions/kimi/yolobox.md "# BEGIN YOLOBOX MANAGED BLOCK" "# END YOLOBOX MANAGED BLOCK"' \
+    'inject_agent_guidance /home/yolo/.vibe/AGENTS.md /opt/yolobox/agent-instructions/vibe/yolobox.md "# BEGIN YOLOBOX MANAGED BLOCK" "# END YOLOBOX MANAGED BLOCK"' \
     '' \
     '# Handle Docker socket access without mutating host socket permissions' \
     'if [ -S /var/run/docker.sock ]; then' \
@@ -923,6 +999,18 @@ RUN set -eux; \
     CURL_HOME="$curl_home" curl -fsSL https://code.kimi.com/kimi-code/install.sh -o "$installer"; \
     CURL_HOME="$curl_home" KIMI_INSTALL_DIR=/usr/local KIMI_NO_MODIFY_PATH=1 bash "$installer"; \
     rm -rf "$curl_home" "$installer"
+
+# Mistral Vibe via uv with the system Python. Only releases at least
+# NPM_MIN_RELEASE_AGE_DAYS old are eligible. All uv settings are scoped to this
+# RUN (never ENV) so runtime `uv tool install --upgrade` as yolo is unaffected.
+# Nothing is seeded into ~/.local/bin: a user-installed copy there must win.
+RUN set -eux; \
+    echo "Mistral Vibe installer cache key: ${VIBE_INSTALLER_CACHE_BUST}" >/dev/null; \
+    UV_TOOL_DIR=/opt/vibe/tools UV_TOOL_BIN_DIR=/usr/local/bin \
+        uv tool install --no-cache --python /usr/bin/python3 \
+        --exclude-newer "${NPM_MIN_RELEASE_AGE_DAYS} days" mistral-vibe; \
+    chmod -R a+rX /opt/vibe; \
+    /usr/local/bin/vibe --version
 
 # RTK command-output compression proxy. Intentionally not pinned: the base image
 # captures the latest RTK release available when yolobox is built.

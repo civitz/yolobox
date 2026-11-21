@@ -11,11 +11,12 @@ The base image is meant to be useful immediately without turning into a giant ki
 - Antigravity CLI
 - OpenAI Codex
 - Kimi Code
+- Mistral Vibe
 - OpenCode v2 (`@opencode/cli`)
 - GitHub Copilot
 - Pi
 
-Claude, Codex, and Kimi Code sessions also get a built-in `yolobox` skill that helps the agent orient itself to the trusted sandbox it is running in, then reads `/run/yolobox/context.json` and describes the active environment. yolobox also injects managed guidance into their user instruction files so they know when to use that skill. The host-side `yolobox-orchestrator` skill lives in the repo's `skills/` directory but is not auto-installed inside the container because it is meant for agents running outside yolobox.
+Claude, Codex, Kimi Code, and Mistral Vibe sessions also get a built-in `yolobox` skill that helps the agent orient itself to the trusted sandbox it is running in, then reads `/run/yolobox/context.json` and describes the active environment. yolobox also injects managed guidance into their user instruction files so they know when to use that skill. The host-side `yolobox-orchestrator` skill lives in the repo's `skills/` directory but is not auto-installed inside the container because it is meant for agents running outside yolobox.
 
 RTK is also preinstalled for opt-in command-output compression. Pass `--rtk` or set `rtk = true` to initialize it for Claude, Codex, Gemini, or OpenCode inside the container. Automatic initialization leaves RTK telemetry disabled; run `rtk telemetry enable` interactively inside the box if you want to opt in.
 
@@ -37,7 +38,7 @@ Each adapter bundles a compatible engine: Codex ACP uses its Codex dependency, a
 
 npm is upgraded during the image build using npm's date-based `--before` filter. yolobox's own later npm/npx installs in that image build run with `NPM_CONFIG_MIN_RELEASE_AGE=7`, but the finished box does not keep the release-age setting at runtime.
 
-Bundled AI CLI versions are captured when the base image is built, but they are only a starting point. User-level installs and self-upgrades live in the persistent home volume and are not reset at startup. Use `yolobox update-agents` to refresh Claude Code, Codex, Gemini, Kimi Code, Antigravity, OpenCode, Copilot, and Pi inside that persistent home volume. `yolobox upgrade` refreshes the bundled image defaults; it is not required just to upgrade a tool yourself.
+Bundled AI CLI versions are captured when the base image is built, but they are only a starting point. User-level installs and self-upgrades live in the persistent home volume and are not reset at startup. Use `yolobox update-agents` to refresh Claude Code, Codex, Gemini, Kimi Code, Mistral Vibe, Antigravity, OpenCode, Copilot, and Pi inside that persistent home volume. `yolobox upgrade` refreshes the bundled image defaults; it is not required just to upgrade a tool yourself.
 
 `yolobox update-agents claude` also updates `claude-agent-acp`, and `yolobox update-agents codex` also updates `codex-acp`. The full `update-agents` command includes both adapters.
 
@@ -70,6 +71,7 @@ Inside yolobox, AI CLIs are wrapped to skip approval prompts where the upstream 
 | `codex` | `codex --ask-for-approval never --sandbox danger-full-access` |
 | `gemini` | `gemini --yolo` |
 | `kimi` | `kimi --yolo` |
+| `vibe` | `vibe --auto-approve` |
 | `agy` | `agy --dangerously-skip-permissions` |
 | `antigravity` | `agy --dangerously-skip-permissions` |
 | `opencode` | `opencode` |
@@ -81,6 +83,14 @@ No confirmations, no guardrails. That is the product.
 OpenCode and Pi do not have dedicated yolo flags yet, but they still run inside the yolobox sandbox.
 
 Kimi Code prompt mode (`kimi --prompt` or `kimi -p`) already uses its non-interactive auto policy, so the wrapper does not add `--yolo` there. It also preserves an explicit `--auto` or upstream permission-mode flag instead of creating a conflicting combination.
+
+Mistral Vibe gets `--auto-approve`, but the wrapper passes your arguments through unchanged when:
+
+- the first argument is a subcommand (`update`, `mcp`, `config`, `run-server`);
+- you pass `--auto-approve` or `--yolo`, `--approval-policy`, `--smart-approve`, or `--agent`;
+- `NO_YOLO=1` is set.
+
+Prompt mode (`vibe -p` or `--prompt-file`) keeps `--auto-approve`, because headless Vibe denies tool calls without it. The image's bundled Vibe has its update checks disabled because it cannot update itself; `yolobox update-agents vibe` installs a user copy that takes precedence and keeps them. Running `vibe update` inside the box while the bundled copy is in use installs that same updatable user copy, because Vibe's own updater cannot touch the root-owned image copy. Vibe copies text through the clipboard shims with `--clipboard`, or through OSC 52 without it, and pastes text through the terminal. Vibe has no clipboard image paste on Linux, so there is none in the box either. Vibe asks once whether to trust a project folder that contains `AGENTS.md`, `.vibe/` or `.agents/`; yolobox does not pre-approve it, and the answer persists in the home volume.
 
 ## Why the base image stays lean
 

@@ -11,6 +11,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // These tests run the container's clipboard shim (assets/yolobox-clipboard)
@@ -539,5 +540,59 @@ func TestBuildRunArgsMountsEmbeddedClipboardShim(t *testing.T) {
 
 	if args := strings.Join(run(false), " "); strings.Contains(args, "yolobox-clipboard") {
 		t.Errorf("without --clipboard no shim should be mounted: %s", args)
+	}
+}
+
+func TestShimCurlTimeLimit(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("assets", "yolobox-clipboard"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := string(data)
+	if got := strings.Count(shim, `curl "`); got != 1 {
+		t.Fatalf("found %d curl calls in the clipboard shim, want 1 (request)", got)
+	}
+	if !strings.Contains(shim, `--max-time "${YOLOBOX_CLIPBOARD_TIMEOUT:-15}"`) {
+		t.Error("the shim's curl call must carry --max-time with the YOLOBOX_CLIPBOARD_TIMEOUT default of 15 seconds")
+	}
+}
+
+func TestShimGivesUpOnSilentBridge(t *testing.T) {
+	s := newShimEnv(t, &fakeHostClipboard{})
+
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+
+	env := append(append([]string{}, s.env...),
+		"YOLOBOX_CLIPBOARD_ENDPOINT="+server.URL,
+		"YOLOBOX_CLIPBOARD_TIMEOUT=1",
+	)
+	for _, name := range []string{"wl-copy", "wl-paste", "pbpaste", "xclip"} {
+		cmd := exec.Command(filepath.Join(s.bin, name))
+		cmd.Env = env
+		cmd.Stdin = strings.NewReader("hello")
+		start := time.Now()
+		done := make(chan error, 1)
+		go func() { done <- cmd.Run() }()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Errorf("%s succeeded against a bridge that never answers", name)
+			}
+			if elapsed := time.Since(start); elapsed > 5*time.Second {
+				t.Errorf("%s took %v to give up, want about 1s", name, elapsed)
+			}
+		case <-time.After(10 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done //nolint:errcheck
+			t.Errorf("%s hung against a bridge that never answers", name)
+		}
 	}
 }

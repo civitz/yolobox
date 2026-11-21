@@ -292,6 +292,7 @@ jobs:
             CLAUDE_INSTALLER_CACHE_BUST=${{ github.ref_name }}-${{ github.sha }}
             ANTIGRAVITY_CLI_INSTALLER_CACHE_BUST=${{ github.ref_name }}-${{ github.sha }}
             KIMI_CODE_INSTALLER_CACHE_BUST=${{ github.ref_name }}-${{ github.sha }}
+            VIBE_INSTALLER_CACHE_BUST=${{ github.ref_name }}-${{ github.sha }}
           tags: |
             ghcr.io/finbarr/yolobox:latest
             ghcr.io/finbarr/yolobox:${{ steps.version.outputs.VERSION }}

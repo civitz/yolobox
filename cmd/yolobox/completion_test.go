@@ -126,6 +126,7 @@ func TestNewBaseFlagSetAppliesEveryFlag(t *testing.T) {
 		"copilot":       cfg.CopilotConfig && cfg.NoCopilotAuth,
 		"gemini":        cfg.GeminiConfig,
 		"kimi":          cfg.KimiConfig,
+		"vibe":          cfg.VibeConfig,
 		"opencode":      cfg.OpencodeConfig,
 		"pi":            cfg.PiConfig,
 		"git":           cfg.GitConfig,

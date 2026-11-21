@@ -58,6 +58,7 @@ These target different layers:
 | `--codex-config` | Sync host `~/.codex` config and live-mount sessions | |
 | `--gemini-config` | Copy host `~/.gemini` Gemini/Antigravity config into the container | |
 | `--kimi-config` | Sync host `~/.kimi-code` config, credentials, skills, and sessions into the container | |
+| `--vibe-config` | Sync host `~/.vibe` Mistral Vibe config (not `.env` or `logs/`) into the container | |
 | `--opencode-config` | Copy host `~/.config/opencode` config into the container | |
 | `--pi-config` | Copy host `~/.pi/agent` config into the container | |
 | `--git-config` | Copy host `~/.gitconfig` into the container | |
@@ -206,6 +207,8 @@ What the host side supports:
 With Claude Code on Windows, press **Alt+V** to paste a screenshot or a copied image file; Windows Terminal keeps Ctrl+V for its own text paste. Claude's `/copy` reaches the Windows clipboard through the terminal (OSC 52) rather than the bridge, and right-click paste in Claude's mouse mode goes through a narrow `powershell.exe` shim that only answers Claude's clipboard read.
 
 yolobox mounts its own copy of the shims into the box, so they always match the bridge, even with an older image. Set `YOLOBOX_CLIPBOARD_DEBUG=1` inside the box to log each shim invocation.
+
+Mistral Vibe copies reach the host clipboard through the same shims (text only; Vibe has no clipboard image paste on Linux). Each shim request gives up after 15 seconds when the bridge does not answer; set `YOLOBOX_CLIPBOARD_TIMEOUT` (in seconds) to change that. See [Host clipboard](/configuration#host-clipboard) for how Mistral Vibe uses it.
 
 ::: warning
 `--clipboard` cannot be combined with `--no-network`. It intentionally lets processes in the box read and write the host clipboard, including screenshots and other images on it.

@@ -9,6 +9,7 @@ yolobox claude
 yolobox codex
 yolobox gemini
 yolobox kimi
+yolobox vibe
 yolobox agy
 yolobox antigravity
 yolobox opencode
@@ -29,6 +30,7 @@ yolobox claude
 yolobox codex
 yolobox gemini
 yolobox kimi
+yolobox vibe
 yolobox agy
 yolobox antigravity
 yolobox opencode
@@ -182,10 +184,13 @@ The check prints the current version, latest version, and a short summary from t
 yolobox update-agents
 yolobox update-agents claude codex
 yolobox update-agents kimi
+yolobox update-agents vibe
 yolobox update-agents antigravity
 ```
 
-`update-agents` runs inside the persistent yolobox home volume and refreshes Claude Code, Codex, Gemini, Kimi Code, Antigravity, OpenCode, Copilot, and Pi. It uses global/default runtime settings, ignores `.yolobox.toml`, skips the project mount, and rejects `--scratch`, because updates made in scratch mode would disappear when the container exits.
+`update-agents` runs inside the persistent yolobox home volume and refreshes Claude Code, Codex, Gemini, Kimi Code, Mistral Vibe, Antigravity, OpenCode, Copilot, and Pi. It uses global/default runtime settings, ignores `.yolobox.toml`, skips the project mount, and rejects `--scratch`, because updates made in scratch mode would disappear when the container exits.
+
+`yolobox update-agents vibe` (alias `mistral-vibe`) installs Mistral Vibe with `uv` into the persistent home volume. That copy takes precedence over the image's bundled one and keeps Vibe's own update checks, which are switched off for the bundled copy because it cannot update itself. Running `vibe update` inside the box with the bundled copy does the same install.
 
 The image bundles OpenCode v2 (`@opencode/cli`). `yolobox update-agents opencode` also installs v2, removing the old `opencode-ai` package from the persistent npm prefix first to avoid a launcher conflict. Installs explicitly allow the required postinstall script. Existing user-installed v1 copies remain in place until you update them; pulling a new image alone does not replace persistent tools.
 

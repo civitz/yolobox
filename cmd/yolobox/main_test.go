@@ -3072,6 +3072,7 @@ func TestToolShortcuts(t *testing.T) {
 		"codex",
 		"gemini",
 		"kimi",
+		"vibe",
 		"agy",
 		"antigravity",
 		"opencode",

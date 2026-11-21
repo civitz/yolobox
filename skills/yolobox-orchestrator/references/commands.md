@@ -25,6 +25,7 @@ yolobox codex
 yolobox claude
 yolobox gemini
 yolobox kimi
+yolobox vibe
 yolobox agy
 yolobox antigravity
 yolobox opencode
@@ -95,6 +96,7 @@ Target one or more tools when you do not want the full update path:
 ```bash
 yolobox update-agents codex
 yolobox update-agents kimi
+yolobox update-agents vibe
 yolobox update-agents claude antigravity
 ```
 
