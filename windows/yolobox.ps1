@@ -197,7 +197,24 @@ function Invoke-Yolobox([object[]]$Arguments) {
     }
 
     $savedWslEnv = $env:WSLENV
+    $savedOutputEncoding = $OutputEncoding
+    $savedConsoleEncoding = $null
+    $encodingSet = $false
     try {
+        # The Linux side writes UTF-8, but PowerShell decodes redirected or
+        # captured native output with [Console]::OutputEncoding (the OEM code
+        # page, e.g. 850) and encodes piped stdin with $OutputEncoding. Switch
+        # both to UTF-8 without a BOM so `yolobox run ... > out.txt` is not
+        # mojibake. Setting the console encoding throws without a console.
+        try {
+            $savedConsoleEncoding = [Console]::OutputEncoding
+            $utf8 = New-Object System.Text.UTF8Encoding $false
+            [Console]::OutputEncoding = $utf8
+            $OutputEncoding = $utf8
+            $encodingSet = $true
+        } catch {
+            $encodingSet = $false
+        }
         $parts = @($savedWslEnv -split ':' | Where-Object { $_ }) + $forward.ToArray()
         $env:WSLENV = ($parts | Select-Object -Unique) -join ':'
 
@@ -210,6 +227,10 @@ function Invoke-Yolobox([object[]]$Arguments) {
         $script:ExitCode = $LASTEXITCODE
     } finally {
         $env:WSLENV = $savedWslEnv
+        if ($encodingSet) {
+            try { [Console]::OutputEncoding = $savedConsoleEncoding } catch { }
+            $OutputEncoding = $savedOutputEncoding
+        }
     }
 
     # The Linux binary removes its config, volumes and itself; the installer

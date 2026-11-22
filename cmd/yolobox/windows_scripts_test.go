@@ -47,6 +47,41 @@ func TestWindowsWrapperUsesWslExec(t *testing.T) {
 	}
 }
 
+// PowerShell decodes redirected native output with [Console]::OutputEncoding
+// (the OEM code page) and encodes piped stdin with $OutputEncoding, while the
+// Linux side speaks UTF-8. The wrapper must switch both around wsl.exe and
+// restore them afterwards.
+func TestWindowsWrapperUsesUTF8AroundWsl(t *testing.T) {
+	script := readWindowsScript(t, "yolobox.ps1")
+	call := strings.Index(script, "\n        & wsl.exe @wslArgs")
+	if call < 0 {
+		t.Fatal("yolobox.ps1 must call wsl.exe as a plain statement")
+	}
+	before := script[:call]
+	for _, want := range []string{
+		"New-Object System.Text.UTF8Encoding $false",
+		"[Console]::OutputEncoding = $utf8",
+		"$OutputEncoding = $utf8",
+	} {
+		if !strings.Contains(before, want) {
+			t.Errorf("yolobox.ps1 must contain %q before calling wsl.exe", want)
+		}
+	}
+	finally := strings.Index(script[call:], "} finally {")
+	if finally < 0 {
+		t.Fatal("yolobox.ps1 lacks a finally after the wsl.exe call")
+	}
+	restore := script[call+finally:]
+	for _, want := range []string{
+		"[Console]::OutputEncoding = $savedConsoleEncoding",
+		"$OutputEncoding = $savedOutputEncoding",
+	} {
+		if !strings.Contains(restore, want) {
+			t.Errorf("yolobox.ps1 finally block must restore with %q", want)
+		}
+	}
+}
+
 func TestWindowsInstallerInstallsBothScripts(t *testing.T) {
 	script := readWindowsScript(t, "install.ps1")
 	if !strings.Contains(script, "$scripts = @('yolobox.ps1', 'install.ps1')") {
